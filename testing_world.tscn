@@ -1,0 +1,22 @@
+[gd_scene load_steps=3 format=3 uid="uid://bq1jmtbur5jm0"]
+
+[ext_resource type="PackedScene" uid="uid://cslogg7a4f2ex" path="res://player.tscn" id="1_148nt"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_mrnst"]
+size = Vector2(1175, 20)
+
+[node name="Testing WorlD" type="Node2D"]
+
+[node name="TileMap" type="TileMap" parent="."]
+format = 2
+
+[node name="StaticBody2D" type="StaticBody2D" parent="."]
+position = Vector2(1, 603)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="StaticBody2D"]
+position = Vector2(577.5, 0)
+shape = SubResource("RectangleShape2D_mrnst")
+metadata/_edit_lock_ = true
+
+[node name="Player" parent="." instance=ExtResource("1_148nt")]
+position = Vector2(499, 173)

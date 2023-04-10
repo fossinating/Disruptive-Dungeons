@@ -1,0 +1,21 @@
+[gd_scene load_steps=3 format=3 uid="uid://gwdmeaf6gh16"]
+
+[ext_resource type="PackedScene" uid="uid://xsat7ypd4nrr" path="res://Rooms/Base Room.tscn" id="1_t6nmx"]
+[ext_resource type="PackedScene" uid="uid://bun34hy01s6yi" path="res://Objects/passage.tscn" id="2_5uole"]
+
+[node name="Vertical Shaft" instance=ExtResource("1_t6nmx")]
+width = 5
+height = 7
+
+[node name="TileMap" parent="." index="0"]
+layer_0/tile_data = PackedInt32Array(0, 0, 0, 262144, 0, 1, 196608, 0, 1, 131072, 0, 1, 65536, 0, 1, 262148, 0, 1, 196612, 0, 1, 131076, 0, 1, 65540, 0, 1, 4, 0, 0, 65537, 1, 0, 131073, 1, 0, 196609, 1, 0, 196610, 1, 0, 196611, 1, 0, 131075, 1, 0, 65539, 1, 0, 65538, 1, 0, 131074, 1, 0, 262145, 1, 0, 262146, 1, 0, 262147, 1, 0, 327684, 0, 1, 327680, 0, 1, 327681, 1, 0, 327682, 1, 0, 327683, 1, 0, 393216, 0, 2, 393220, 0, 2)
+layer_1/tile_data = PackedInt32Array(196609, 2, 0, 196610, 2, 0, 196611, 2, 0, 3, 2, 0, 2, 2, 0, 1, 2, 0, 393217, 2, 0, 393218, 2, 0, 393219, 2, 0)
+
+[node name="Passage" parent="Objects" index="0" instance=ExtResource("2_5uole")]
+position = Vector2(80, 16)
+position_i = Vector2i(2, 0)
+
+[node name="Passage2" parent="Objects" index="1" instance=ExtResource("2_5uole")]
+position = Vector2(80, 208)
+position_i = Vector2i(2, 6)
+exit_dir = 2

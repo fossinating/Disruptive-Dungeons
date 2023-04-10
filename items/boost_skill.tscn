@@ -1,0 +1,10 @@
+[gd_scene load_steps=4 format=3 uid="uid://bcndkqdoq27kj"]
+
+[ext_resource type="PackedScene" uid="uid://c0bf5us0wk8wl" path="res://items/Skill.tscn" id="1_g5w47"]
+[ext_resource type="Texture2D" uid="uid://docsgf3vp8ks0" path="res://icons/boost skill icon.png" id="2_mrlhb"]
+[ext_resource type="Script" path="res://items/Boost.gd" id="2_o6vvl"]
+
+[node name="Boost" instance=ExtResource("1_g5w47")]
+script = ExtResource("2_o6vvl")
+item_image = ExtResource("2_mrlhb")
+description = "Boosts the player in the forward"

@@ -1,0 +1,32 @@
+res://enemies/enemy bullet.tscn::62841a76182f2e362d22b7190824f7f7::1679285815::res://.godot/exported/133200997/export-cd31bbf930504f9996ca8d8e1e2f7db7-enemy bullet.scn
+res://enemies/flying_enemy.tscn::7a43eda2db31b361b62a740ec33eb68f::1679281903::res://.godot/exported/133200997/export-ec29de13be114e2629766a0b92e762c3-flying_enemy.scn
+res://enemies/moving_enemy.tscn::c497fd47fd2c24a281af603625e8dfc8::1679281903::res://.godot/exported/133200997/export-0e74df145ed06cbd57fa2b04b2cf6420-moving_enemy.scn
+res://items/boost_skill.tscn::231d0bffd0011de95b87e4df5d0cf2e0::1679263376::res://.godot/exported/133200997/export-e6976f9dec4ac60050e6f5fe43fc9582-boost_skill.scn
+res://items/item_pickup.tscn::8f804883d3a33f10be453e6c3f0b70ed::1679285815::res://.godot/exported/133200997/export-c864651e8e7cf9ac7d5f0c1943e40ef4-item_pickup.scn
+res://items/item_pool.tscn::4e30a8c08e0ea0a1cafbb2a556668155::1679263376::res://.godot/exported/133200997/export-932391f7235fe690f9c51eee55704065-item_pool.scn
+res://items/laser_pistol.tscn::28a8d7c731995d9323136f900d1dac30::1679281903::res://.godot/exported/133200997/export-675dcd00f931fb7b74add45688e332c9-laser_pistol.scn
+res://items/player bullet.tscn::373a51a40354c032b3ff7def60b69280::1679263376::res://.godot/exported/133200997/export-0a6f5198f25bf50fea7832a9b071a91d-player bullet.scn
+res://items/shield.tscn::fb255b8780cf8852559cd4925736366e::1679257842::res://.godot/exported/133200997/export-ff81cee8e1c4e84bd0b7c9d968e71267-shield.scn
+res://items/Skill.tscn::0e5c59185ce0300c3af65116b0f2ad20::1679263376::res://.godot/exported/133200997/export-8c756dc0167271170b765ab07f782a72-Skill.scn
+res://items/weapon.tscn::3488b08e3bd40202a003d02aedf88f4a::1679251118::res://.godot/exported/133200997/export-8c377ddf6901276d95af779daba67ab6-weapon.scn
+res://Objects/DisruptionField.tscn::60fc138e8a8c19c0c39668387546d25b::1679263376::res://.godot/exported/133200997/export-0ac335f8c723e6e0f1faeaedcc7ae803-DisruptionField.scn
+res://Objects/passage.tscn::5d864168063c07874d9a3b3dc3171e37::1679285815::res://.godot/exported/133200997/export-434b77e7666e161adf77ee159cae5c62-passage.scn
+res://Objects/spawn.tscn::6281fdbdcabdb4efe0a12506eb55fb24::1679281903::res://.godot/exported/133200997/export-8ba366f53f2e95fc63f8b7aaf2eedd1f-spawn.scn
+res://Rooms/Base Room.tscn::76864a2ab3181ee4bb3713df99866f06::1679263376::res://.godot/exported/133200997/export-c894c1ad935dfc72cdbbb2efe9ba7add-Base Room.scn
+res://Rooms/big_split_room.tscn::ae5a5145b4597ce7a75b81b90ec57af5::1679281903::res://.godot/exported/133200997/export-7d22d9051ee0f99c8fc9343a3dc38c78-big_split_room.scn
+res://Rooms/Bottom End.tscn::db0db01a8ceb66268a80fb61b8af94d9::1679174659::res://.godot/exported/133200997/export-20f2c16adb522ba9db59d18896e0d6f8-Bottom End.scn
+res://Rooms/Entrance Room.tscn::f0119766f34ccb798c9606f485c1f712::1679260982::res://.godot/exported/133200997/export-05cc3e769c44e0848f6e33a9737f4174-Entrance Room.scn
+res://Rooms/fly_enemy_room.tscn::9a3b2c4662d76d19617915be0ce5d038::1679281903::res://.godot/exported/133200997/export-dd8e1cd17ae8ac8edddb8f0013b0749e-fly_enemy_room.scn
+res://Rooms/hallway.tscn::b1b1a0c23c55de8a80ac916852432703::1679260988::res://.godot/exported/133200997/export-7d54970a1f5a7e5040eaec2200615e8f-hallway.scn
+res://Rooms/Left End.tscn::6a943256a2dc5cbaf681ad99283afe7e::1679174659::res://.godot/exported/133200997/export-d93a4c7b221fcb659200db0bbf5d1de3-Left End.scn
+res://Rooms/parkour.tscn::aa1a92f9c3c844e10edc842a59231553::1679285815::res://.godot/exported/133200997/export-c7aa6c33e3821351562b33ac5008874f-parkour.scn
+res://Rooms/Right End.tscn::ab2f578f98ab42318ce5506bd8b10e03::1679174659::res://.godot/exported/133200997/export-a05b0df444a78507c1d616fa341ab598-Right End.scn
+res://Rooms/Top End.tscn::c6014a3a13874d7855a36aafe4ba38af::1679174659::res://.godot/exported/133200997/export-5c80b31986a6a41dcc035eca429ed27e-Top End.scn
+res://Rooms/vertical_shaft.tscn::3d4f3fe24f0d167470f32f13465505bb::1679263376::res://.godot/exported/133200997/export-0f04b5c33d3c7a0b9f3c161869d675a7-vertical_shaft.scn
+res://UI/item_full_display.tscn::b2e73e695e58117c9e51b65be3d9d3e1::1679263376::res://.godot/exported/133200997/export-62bb79737aa3e4ad04448d94a2d43c1c-item_full_display.scn
+res://UI/main_menu.tscn::3ab2e73660d0ff68f79bcdb0f2a00994::1679285815::res://.godot/exported/133200997/export-2138ba4767b07f21f5de407b42dc4973-main_menu.scn
+res://player.tscn::18d21f5ecd4e2c873c2fcf34fd0c54df::1679286193::res://.godot/exported/133200997/export-36a25e342948d0ceacc500772b5412b3-player.scn
+res://RoomTileset.tres::b8186a3d1e162491f294724d2fe97781::1679284406::res://.godot/exported/133200997/export-cd5f316bdbe176434a994480c485639e-RoomTileset.res
+res://testing_world.tscn::53d6a5ddec5b31f1fa41f71f5f75a2e4::1679176715::res://.godot/exported/133200997/export-e47a82f96e6915da1143452bade2a3e8-testing_world.scn
+res://world.tscn::9fbfa543df4447e35b4376e18e23bf25::1679285815::res://.godot/exported/133200997/export-76e0adcbc83681695885bae615f516ae-world.scn
+res://cover_image.tscn::71a9a3bc4eb3963ca6cf998dcc40abe3::1679285815::res://.godot/exported/133200997/export-41ef9a387aaa97dd9f6731c17094767c-cover_image.scn

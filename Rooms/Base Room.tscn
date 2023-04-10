@@ -1,0 +1,21 @@
+[gd_scene load_steps=3 format=3 uid="uid://xsat7ypd4nrr"]
+
+[ext_resource type="TileSet" uid="uid://doogdw4keot2f" path="res://RoomTileset.tres" id="1_gx3au"]
+[ext_resource type="Script" path="res://Rooms/Room.gd" id="1_jna4s"]
+
+[node name="Room" type="Node2D"]
+script = ExtResource("1_jna4s")
+
+[node name="TileMap" type="TileMap" parent="."]
+tile_set = ExtResource("1_gx3au")
+format = 2
+layer_0/name = "map"
+layer_1/name = "objects"
+layer_1/enabled = true
+layer_1/modulate = Color(1, 1, 1, 1)
+layer_1/y_sort_enabled = false
+layer_1/y_sort_origin = 0
+layer_1/z_index = 0
+layer_1/tile_data = PackedInt32Array()
+
+[node name="Objects" type="Node2D" parent="."]

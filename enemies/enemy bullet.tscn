@@ -1,0 +1,20 @@
+[gd_scene load_steps=3 format=3 uid="uid://dkfeuvv7amiuv"]
+
+[ext_resource type="Script" path="res://enemies/enemy bullet.gd" id="1_uv43j"]
+[ext_resource type="Texture2D" uid="uid://b8qmt1r02t6f2" path="res://enemies/enemy bullet.png" id="2_weyb4"]
+
+[node name="Enemy Bullet" type="RigidBody2D"]
+collision_layer = 32
+collision_mask = 207
+gravity_scale = 0.0
+max_contacts_reported = 1
+contact_monitor = true
+script = ExtResource("1_uv43j")
+
+[node name="CollisionPolygon2D" type="CollisionPolygon2D" parent="."]
+polygon = PackedVector2Array(-6, -1, -5, -1, -5, -2, 5, -2, 5, -1, 6, -1, 6, 1, 5, 1, 5, 2, -5, 2, -5, 1, -6, 1)
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("2_weyb4")
+
+[connection signal="body_entered" from="." to="." method="_on_body_entered"]

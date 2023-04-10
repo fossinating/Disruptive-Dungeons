@@ -1,0 +1,16 @@
+[gd_scene load_steps=3 format=3 uid="uid://cvl268wvfckw1"]
+
+[ext_resource type="PackedScene" uid="uid://xsat7ypd4nrr" path="res://Rooms/Base Room.tscn" id="1_0060h"]
+[ext_resource type="PackedScene" uid="uid://bun34hy01s6yi" path="res://Objects/passage.tscn" id="2_qpjis"]
+
+[node name="Right End" instance=ExtResource("1_0060h")]
+width = 1
+height = 5
+
+[node name="TileMap" parent="." index="0"]
+layer_0/tile_data = PackedInt32Array(0, 0, 0, 65536, 0, 1, 131072, 0, 1, 262144, 0, 2, 196608, 0, 1)
+
+[node name="Passage" parent="Objects" index="0" instance=ExtResource("2_qpjis")]
+position = Vector2(16, 80)
+position_i = Vector2i(0, 2)
+exit_dir = 3

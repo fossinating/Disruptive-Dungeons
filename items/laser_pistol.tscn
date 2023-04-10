@@ -1,0 +1,16 @@
+[gd_scene load_steps=4 format=3 uid="uid://b6h3dwbos7jcp"]
+
+[ext_resource type="PackedScene" uid="uid://btl6sfysnle8" path="res://items/weapon.tscn" id="1_xcka8"]
+[ext_resource type="Script" path="res://items/laser_pistol.gd" id="2_c6din"]
+[ext_resource type="Texture2D" uid="uid://dotg7fxc3t5so" path="res://icons/Pistol Icon.png" id="3_k0sn0"]
+
+[node name="Laser Pistol" instance=ExtResource("1_xcka8")]
+script = ExtResource("2_c6din")
+item_image = ExtResource("3_k0sn0")
+description = "A basic laser pistol"
+
+[node name="Timer" type="Timer" parent="." index="0"]
+wait_time = 0.15
+one_shot = true
+
+[connection signal="timeout" from="Timer" to="." method="_on_timer_timeout"]

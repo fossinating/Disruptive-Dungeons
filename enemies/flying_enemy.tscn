@@ -1,0 +1,48 @@
+[gd_scene load_steps=6 format=3 uid="uid://0irc2djrwu1j"]
+
+[ext_resource type="Script" path="res://enemies/flying_enemy.gd" id="1_65sih"]
+[ext_resource type="Texture2D" uid="uid://bew8o67rjlngs" path="res://enemies/flying enemy.png" id="1_avr3x"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_e0q8h"]
+size = Vector2(32, 17)
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_7lwx2"]
+radius = 672.19
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_btmte"]
+radius = 160.0
+
+[node name="Flying Enemy" type="CharacterBody2D" groups=["enemies"]]
+script = ExtResource("1_65sih")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+position = Vector2(0, -6.5)
+shape = SubResource("RectangleShape2D_e0q8h")
+
+[node name="Detection Range" type="Area2D" parent="."]
+collision_layer = 256
+collision_mask = 64
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Detection Range"]
+shape = SubResource("CircleShape2D_7lwx2")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("1_avr3x")
+
+[node name="Attack Range" type="Area2D" parent="."]
+collision_layer = 256
+collision_mask = 64
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Attack Range"]
+shape = SubResource("CircleShape2D_btmte")
+
+[node name="Timer" type="Timer" parent="."]
+
+[node name="RayCast2D" type="RayCast2D" parent="."]
+collision_mask = 65
+
+[connection signal="body_entered" from="Detection Range" to="." method="_on_area_2d_body_entered"]
+[connection signal="body_exited" from="Detection Range" to="." method="_on_area_2d_body_exited"]
+[connection signal="body_entered" from="Attack Range" to="." method="_on_attack_range_body_entered"]
+[connection signal="body_exited" from="Attack Range" to="." method="_on_attack_range_body_exited"]
+[connection signal="timeout" from="Timer" to="." method="_on_timer_timeout"]

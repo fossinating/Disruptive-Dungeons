@@ -1,0 +1,22 @@
+[gd_scene load_steps=4 format=3 uid="uid://jm5p52mjd16y"]
+
+[ext_resource type="Script" path="res://items/shield.gd" id="1_j6ppq"]
+[ext_resource type="Texture2D" uid="uid://fh5xrnuplaqy" path="res://items/shield.png" id="1_w8k1c"]
+[ext_resource type="Texture2D" uid="uid://brcmc67iximqh" path="res://icons/shield item.png" id="2_665qa"]
+
+[node name="Shield" type="Node2D"]
+visible = false
+script = ExtResource("1_j6ppq")
+item_image = ExtResource("2_665qa")
+description = "Projects a barrier of energy, blocking all projectiles"
+
+[node name="StaticBody2D" type="StaticBody2D" parent="."]
+rotation = 1.5708
+collision_layer = 4
+
+[node name="CollisionPolygon2D" type="CollisionPolygon2D" parent="StaticBody2D"]
+polygon = PackedVector2Array(-19, -11, -19, -13, -18, -13, -18, -15, -17, -15, -17, -16, -16, -16, -16, -17, -15, -17, -15, -18, -13, -18, -13, -19, -12, -19, -12, -20, -10, -20, -10, -21, -8, -21, -8, -22, -5, -22, -5, -23, 5, -23, 5, -22, 8, -22, 8, -21, 10, -21, 10, -20, 12, -20, 12, -19, 13, -19, 13, -18, 15, -18, 15, -17, 16, -17, 16, -16, 17, -16, 17, -15, 18, -15, 18, -13, 19, -13, 19, -11, 18, -11, 18, -10, 17, -10, 17, -9, 16, -9, 16, -11, 15, -11, 15, -12, 14, -12, 14, -14, 12, -14, 12, -15, 11, -15, 11, -16, 9, -16, 9, -17, 7, -17, 7, -18, 4, -18, 4, -19, -4, -19, -4, -18, -7, -18, -7, -17, -9, -17, -9, -16, -11, -16, -11, -15, -12, -15, -12, -14, -14, -14, -14, -12, -15, -12, -15, -11, -16, -11, -16, -9, -17, -9, -17, -10, -18, -10, -18, -11)
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+rotation = 1.5708
+texture = ExtResource("1_w8k1c")

@@ -1,0 +1,547 @@
+[gd_scene load_steps=16 format=3 uid="uid://cslogg7a4f2ex"]
+
+[ext_resource type="Script" path="res://player.gd" id="1_6jfrv"]
+[ext_resource type="Texture2D" uid="uid://dl1six4o5hfoc" path="res://player skins/default.png" id="2_uatcr"]
+[ext_resource type="Texture2D" uid="uid://dnk15xyg6mk7k" path="res://icons/Disrupt Accel.png" id="3_xfq0m"]
+[ext_resource type="Texture2D" uid="uid://d33st3lcaedtr" path="res://icons/Disrupt Jump.png" id="4_bht2b"]
+[ext_resource type="Texture2D" uid="uid://dybyklngpe3l2" path="res://icons/Disrupt Skills.png" id="5_r455j"]
+[ext_resource type="Texture2D" uid="uid://bbba8cbde8i5g" path="res://icons/Disrupt Weapons.png" id="6_b88gr"]
+[ext_resource type="Texture2D" uid="uid://dh80m6ohl2u14" path="res://addons/ActionIcon/Keyboard/Blank.png" id="7_7ijj8"]
+[ext_resource type="Script" path="res://addons/ActionIcon/ActionIcon.gd" id="8_mtbt1"]
+[ext_resource type="Texture2D" uid="uid://rc7uhghvub1e" path="res://icons/Weapon Icon.png" id="9_3g28a"]
+[ext_resource type="PackedScene" uid="uid://6n3csk2wuf3r" path="res://UI/item_full_display.tscn" id="9_q6ikb"]
+[ext_resource type="Texture2D" uid="uid://5u66ede5hsr8" path="res://icons/skill icon.png" id="10_2ba6d"]
+[ext_resource type="Script" path="res://Pause Menu.gd" id="12_np7u5"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_mf72h"]
+radius = 14.0
+
+[sub_resource type="Gradient" id="Gradient_33wfw"]
+colors = PackedColorArray(1, 1, 1, 1, 1, 1, 1, 1)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_i4fpb"]
+gradient = SubResource("Gradient_33wfw")
+fill_from = Vector2(0, 0.00458716)
+
+[node name="Player" type="CharacterBody2D"]
+z_index = 100
+collision_layer = 64
+collision_mask = 179
+script = ExtResource("1_6jfrv")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_mf72h")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("2_uatcr")
+
+[node name="Camera2D" type="Camera2D" parent="."]
+zoom = Vector2(2.5, 2.5)
+position_smoothing_enabled = true
+position_smoothing_speed = 10.0
+
+[node name="CanvasLayer" type="CanvasLayer" parent="Camera2D"]
+
+[node name="Control" type="Control" parent="Camera2D/CanvasLayer"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VFlowContainer" type="VFlowContainer" parent="Camera2D/CanvasLayer/Control"]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -32.0
+offset_top = -201.0
+grow_horizontal = 0
+grow_vertical = 0
+alignment = 2
+
+[node name="dummy for some reason" type="TextureRect" parent="Camera2D/CanvasLayer/Control/VFlowContainer"]
+self_modulate = Color(1, 1, 1, 0)
+layout_mode = 2
+texture = ExtResource("3_xfq0m")
+
+[node name="Accel Disabled" type="TextureRect" parent="Camera2D/CanvasLayer/Control/VFlowContainer"]
+visible = false
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+tooltip_text = "Acceleration Disabled"
+texture = ExtResource("3_xfq0m")
+
+[node name="Jump Disabled" type="TextureRect" parent="Camera2D/CanvasLayer/Control/VFlowContainer"]
+visible = false
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+tooltip_text = "Jumping Disabled"
+texture = ExtResource("4_bht2b")
+
+[node name="Skills Disabled" type="TextureRect" parent="Camera2D/CanvasLayer/Control/VFlowContainer"]
+visible = false
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+tooltip_text = "Skills Disabled"
+texture = ExtResource("5_r455j")
+
+[node name="Weapons Disabled" type="TextureRect" parent="Camera2D/CanvasLayer/Control/VFlowContainer"]
+visible = false
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+tooltip_text = "Weapons Disabled"
+texture = ExtResource("6_b88gr")
+
+[node name="CenterContainer" type="CenterContainer" parent="Camera2D/CanvasLayer/Control"]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -101.0
+offset_bottom = -28.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="Interact Prompt" type="HBoxContainer" parent="Camera2D/CanvasLayer/Control/CenterContainer"]
+visible = false
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Camera2D/CanvasLayer/Control/CenterContainer/Interact Prompt"]
+layout_mode = 2
+text = "Press "
+
+[node name="ActionIcon" type="TextureRect" parent="Camera2D/CanvasLayer/Control/CenterContainer/Interact Prompt"]
+layout_mode = 2
+script = ExtResource("8_mtbt1")
+action_name = &"interact"
+
+[node name="TextureRect" type="TextureRect" parent="Camera2D/CanvasLayer/Control/CenterContainer/Interact Prompt"]
+visible = false
+layout_mode = 2
+texture = ExtResource("7_7ijj8")
+expand_mode = 1
+stretch_mode = 5
+script = ExtResource("8_mtbt1")
+action_name = &"interact"
+
+[node name="Label2" type="Label" parent="Camera2D/CanvasLayer/Control/CenterContainer/Interact Prompt"]
+layout_mode = 2
+text = " to <action>"
+
+[node name="Pickup Selector" type="Control" parent="Camera2D/CanvasLayer/Control"]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -493.0
+offset_top = -263.0
+offset_right = 493.0
+offset_bottom = 263.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ColorRect" type="Panel" parent="Camera2D/CanvasLayer/Control/Pickup Selector"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Pickup Selector" type="HBoxContainer" parent="Camera2D/CanvasLayer/Control/Pickup Selector"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 120
+alignment = 1
+
+[node name="Primary Slot" type="VBoxContainer" parent="Camera2D/CanvasLayer/Control/Pickup Selector/Pickup Selector"]
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="Label" type="Label" parent="Camera2D/CanvasLayer/Control/Pickup Selector/Pickup Selector/Primary Slot"]
+layout_mode = 2
+text = "Primary Slot"
+horizontal_alignment = 1
+
+[node name="Item Full Display" parent="Camera2D/CanvasLayer/Control/Pickup Selector/Pickup Selector/Primary Slot" instance=ExtResource("9_q6ikb")]
+layout_mode = 2
+
+[node name="Button" type="Button" parent="Camera2D/CanvasLayer/Control/Pickup Selector/Pickup Selector/Primary Slot"]
+layout_mode = 2
+text = "Select"
+
+[node name="New Item" type="VBoxContainer" parent="Camera2D/CanvasLayer/Control/Pickup Selector/Pickup Selector"]
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="Label" type="Label" parent="Camera2D/CanvasLayer/Control/Pickup Selector/Pickup Selector/New Item"]
+layout_mode = 2
+text = "Select a slot for item:"
+horizontal_alignment = 1
+
+[node name="Item Full Display" parent="Camera2D/CanvasLayer/Control/Pickup Selector/Pickup Selector/New Item" instance=ExtResource("9_q6ikb")]
+layout_mode = 2
+
+[node name="Secondary Slot" type="VBoxContainer" parent="Camera2D/CanvasLayer/Control/Pickup Selector/Pickup Selector"]
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="Label" type="Label" parent="Camera2D/CanvasLayer/Control/Pickup Selector/Pickup Selector/Secondary Slot"]
+layout_mode = 2
+text = "Secondary Slot"
+horizontal_alignment = 1
+
+[node name="Item Full Display" parent="Camera2D/CanvasLayer/Control/Pickup Selector/Pickup Selector/Secondary Slot" instance=ExtResource("9_q6ikb")]
+layout_mode = 2
+
+[node name="Button" type="Button" parent="Camera2D/CanvasLayer/Control/Pickup Selector/Pickup Selector/Secondary Slot"]
+layout_mode = 2
+text = "Select"
+
+[node name="Inventory" type="HFlowContainer" parent="Camera2D/CanvasLayer/Control"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = -72.0
+offset_right = 367.0
+grow_vertical = 0
+theme_override_constants/h_separation = 6
+
+[node name="Primary Weapon" type="Control" parent="Camera2D/CanvasLayer/Control/Inventory"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+
+[node name="TextureRect" type="TextureRect" parent="Camera2D/CanvasLayer/Control/Inventory/Primary Weapon"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+texture = ExtResource("9_3g28a")
+
+[node name="ActionIcon" type="TextureRect" parent="Camera2D/CanvasLayer/Control/Inventory/Primary Weapon"]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -40.0
+offset_top = -40.0
+grow_horizontal = 0
+grow_vertical = 0
+script = ExtResource("8_mtbt1")
+action_name = &"use_primary_weapon"
+fit_mode = 2
+
+[node name="Secondary Weapon" type="Control" parent="Camera2D/CanvasLayer/Control/Inventory"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+
+[node name="TextureRect" type="TextureRect" parent="Camera2D/CanvasLayer/Control/Inventory/Secondary Weapon"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+texture = ExtResource("9_3g28a")
+
+[node name="ActionIcon" type="TextureRect" parent="Camera2D/CanvasLayer/Control/Inventory/Secondary Weapon"]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -40.0
+offset_top = -40.0
+grow_horizontal = 0
+grow_vertical = 0
+script = ExtResource("8_mtbt1")
+action_name = &"use_secondary_weapon"
+fit_mode = 2
+
+[node name="Primary Skill" type="Control" parent="Camera2D/CanvasLayer/Control/Inventory"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+
+[node name="TextureRect" type="TextureRect" parent="Camera2D/CanvasLayer/Control/Inventory/Primary Skill"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+texture = ExtResource("10_2ba6d")
+
+[node name="ColorRect" type="ColorRect" parent="Camera2D/CanvasLayer/Control/Inventory/Primary Skill"]
+visible = false
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+color = Color(0.188235, 0.188235, 0.188235, 0.698039)
+
+[node name="Cooldown" type="Label" parent="Camera2D/CanvasLayer/Control/Inventory/Primary Skill"]
+visible = false
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 23.0
+
+[node name="ActionIcon" type="TextureRect" parent="Camera2D/CanvasLayer/Control/Inventory/Primary Skill"]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -40.0
+offset_top = -40.0
+grow_horizontal = 0
+grow_vertical = 0
+script = ExtResource("8_mtbt1")
+action_name = &"use_primary_skill"
+fit_mode = 2
+
+[node name="Secondary Skill" type="Control" parent="Camera2D/CanvasLayer/Control/Inventory"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+
+[node name="TextureRect" type="TextureRect" parent="Camera2D/CanvasLayer/Control/Inventory/Secondary Skill"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+texture = ExtResource("10_2ba6d")
+
+[node name="ColorRect" type="ColorRect" parent="Camera2D/CanvasLayer/Control/Inventory/Secondary Skill"]
+visible = false
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 0
+offset_right = 64.0
+offset_bottom = 64.0
+color = Color(0.188235, 0.188235, 0.188235, 0.698039)
+
+[node name="Cooldown" type="Label" parent="Camera2D/CanvasLayer/Control/Inventory/Secondary Skill"]
+visible = false
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 23.0
+
+[node name="ActionIcon" type="TextureRect" parent="Camera2D/CanvasLayer/Control/Inventory/Secondary Skill"]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -40.0
+offset_top = -40.0
+grow_horizontal = 0
+grow_vertical = 0
+script = ExtResource("8_mtbt1")
+action_name = &"use_secondary_skill"
+fit_mode = 2
+
+[node name="Health Section" type="MarginContainer" parent="Camera2D/CanvasLayer/Control"]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+
+[node name="HealthBar" type="ProgressBar" parent="Camera2D/CanvasLayer/Control/Health Section"]
+custom_minimum_size = Vector2(256, 32)
+layout_mode = 2
+step = 1.0
+value = 100.0
+
+[node name="Top Right" type="MarginContainer" parent="Camera2D/CanvasLayer/Control"]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -40.0
+offset_bottom = 40.0
+grow_horizontal = 0
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Camera2D/CanvasLayer/Control/Top Right"]
+layout_mode = 2
+
+[node name="Minimap" type="SubViewportContainer" parent="Camera2D/CanvasLayer/Control/Top Right/VBoxContainer"]
+visible = false
+custom_minimum_size = Vector2(256, 192)
+layout_mode = 2
+
+[node name="SubViewport" type="SubViewport" parent="Camera2D/CanvasLayer/Control/Top Right/VBoxContainer/Minimap"]
+transparent_bg = true
+handle_input_locally = false
+size = Vector2i(256, 192)
+render_target_update_mode = 0
+
+[node name="Enemy Count" type="Label" parent="Camera2D/CanvasLayer/Control/Top Right/VBoxContainer"]
+layout_mode = 2
+horizontal_alignment = 2
+
+[node name="Win Screen" type="Panel" parent="Camera2D/CanvasLayer/Control"]
+process_mode = 3
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="CenterContainer" type="CenterContainer" parent="Camera2D/CanvasLayer/Control/Win Screen"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Camera2D/CanvasLayer/Control/Win Screen/CenterContainer"]
+layout_mode = 2
+theme_override_constants/separation = 66
+alignment = 1
+
+[node name="Label" type="Label" parent="Camera2D/CanvasLayer/Control/Win Screen/CenterContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 52
+text = "You beat the dungeon!"
+
+[node name="Time Taken" type="Label" parent="Camera2D/CanvasLayer/Control/Win Screen/CenterContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 35
+text = "Time Taken:"
+horizontal_alignment = 1
+
+[node name="Play Again Button" type="Button" parent="Camera2D/CanvasLayer/Control/Win Screen/CenterContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 36
+text = "Play Again"
+
+[node name="Main Menu Button" type="Button" parent="Camera2D/CanvasLayer/Control/Win Screen/CenterContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 36
+text = "Main Menu"
+
+[node name="Death Screen" type="Panel" parent="Camera2D/CanvasLayer/Control"]
+process_mode = 3
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="CenterContainer" type="CenterContainer" parent="Camera2D/CanvasLayer/Control/Death Screen"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Camera2D/CanvasLayer/Control/Death Screen/CenterContainer"]
+layout_mode = 2
+theme_override_constants/separation = 66
+alignment = 1
+
+[node name="Label" type="Label" parent="Camera2D/CanvasLayer/Control/Death Screen/CenterContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 52
+text = "You Died!"
+
+[node name="Play Again Button" type="Button" parent="Camera2D/CanvasLayer/Control/Death Screen/CenterContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 36
+text = "Play Again"
+
+[node name="Main Menu Button" type="Button" parent="Camera2D/CanvasLayer/Control/Death Screen/CenterContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 36
+text = "Main Menu"
+
+[node name="Pause Menu" type="Panel" parent="Camera2D/CanvasLayer/Control"]
+process_mode = 3
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("12_np7u5")
+
+[node name="CenterContainer" type="CenterContainer" parent="Camera2D/CanvasLayer/Control/Pause Menu"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Camera2D/CanvasLayer/Control/Pause Menu/CenterContainer"]
+layout_mode = 2
+theme_override_constants/separation = 66
+alignment = 1
+
+[node name="Label" type="Label" parent="Camera2D/CanvasLayer/Control/Pause Menu/CenterContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 52
+text = "Game Paused"
+
+[node name="Time Taken" type="Label" parent="Camera2D/CanvasLayer/Control/Pause Menu/CenterContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 35
+text = "Current Time: "
+horizontal_alignment = 1
+
+[node name="Resume Button" type="Button" parent="Camera2D/CanvasLayer/Control/Pause Menu/CenterContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 36
+text = "Resume"
+
+[node name="Main Menu Button" type="Button" parent="Camera2D/CanvasLayer/Control/Pause Menu/CenterContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 36
+text = "Main Menu"
+
+[node name="PointLight2D" type="PointLight2D" parent="."]
+visible = false
+color = Color(1, 1, 1, 0)
+shadow_color = Color(0, 0, 0, 1)
+texture = SubResource("GradientTexture2D_i4fpb")
+texture_scale = 50.0
+
+[node name="Minimap Camera" type="Camera2D" parent="."]
+zoom = Vector2(0.5, 0.5)
+
+[node name="Timer" type="Timer" parent="."]
+
+[connection signal="pressed" from="Camera2D/CanvasLayer/Control/Pickup Selector/Pickup Selector/Primary Slot/Button" to="." method="_on_select_primary_slot_button_pressed"]
+[connection signal="pressed" from="Camera2D/CanvasLayer/Control/Pickup Selector/Pickup Selector/Secondary Slot/Button" to="." method="_on_select_secondary_slot_button_pressed"]
+[connection signal="pressed" from="Camera2D/CanvasLayer/Control/Win Screen/CenterContainer/VBoxContainer/Play Again Button" to="." method="_on_play_again_button_pressed"]
+[connection signal="pressed" from="Camera2D/CanvasLayer/Control/Win Screen/CenterContainer/VBoxContainer/Main Menu Button" to="." method="_on_main_menu_button_pressed"]
+[connection signal="pressed" from="Camera2D/CanvasLayer/Control/Death Screen/CenterContainer/VBoxContainer/Play Again Button" to="." method="_on_play_again_button_pressed"]
+[connection signal="pressed" from="Camera2D/CanvasLayer/Control/Death Screen/CenterContainer/VBoxContainer/Main Menu Button" to="." method="_on_main_menu_button_pressed"]
+[connection signal="pressed" from="Camera2D/CanvasLayer/Control/Pause Menu/CenterContainer/VBoxContainer/Resume Button" to="." method="_on_resume_button_pressed"]
+[connection signal="pressed" from="Camera2D/CanvasLayer/Control/Pause Menu/CenterContainer/VBoxContainer/Main Menu Button" to="." method="_on_main_menu_button_pressed"]

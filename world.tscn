@@ -1,0 +1,59 @@
+[gd_scene load_steps=19 format=3 uid="uid://xx6o7gigyd5m"]
+
+[ext_resource type="Script" path="res://map.gd" id="1_6ja63"]
+[ext_resource type="TileSet" uid="uid://doogdw4keot2f" path="res://RoomTileset.tres" id="1_vig58"]
+[ext_resource type="PackedScene" uid="uid://bjxgjiqmem6jm" path="res://Rooms/hallway.tscn" id="3_rph7r"]
+[ext_resource type="PackedScene" uid="uid://d1wn7fjxt41hy" path="res://Rooms/Left End.tscn" id="4_vnvh3"]
+[ext_resource type="PackedScene" uid="uid://cvl268wvfckw1" path="res://Rooms/Right End.tscn" id="5_rj74q"]
+[ext_resource type="PackedScene" uid="uid://g6vjngah0vyk" path="res://Rooms/big_split_room.tscn" id="6_c40s7"]
+[ext_resource type="PackedScene" uid="uid://bdy42y6l0q56u" path="res://Rooms/Entrance Room.tscn" id="6_ugdod"]
+[ext_resource type="PackedScene" uid="uid://gwdmeaf6gh16" path="res://Rooms/vertical_shaft.tscn" id="7_n108s"]
+[ext_resource type="PackedScene" uid="uid://cslogg7a4f2ex" path="res://player.tscn" id="7_so6wi"]
+[ext_resource type="PackedScene" uid="uid://dvlgoi3isbqug" path="res://Rooms/Top End.tscn" id="8_2noo3"]
+[ext_resource type="PackedScene" uid="uid://33cwo1krcg1y" path="res://Rooms/Bottom End.tscn" id="9_gefrr"]
+[ext_resource type="PackedScene" uid="uid://dkrha24odcog5" path="res://Rooms/fly_enemy_room.tscn" id="10_40yui"]
+[ext_resource type="PackedScene" uid="uid://dsg7lx0o4harj" path="res://Rooms/parkour.tscn" id="11_m6o5m"]
+[ext_resource type="Texture2D" uid="uid://dqr8pgdh5nhlp" path="res://icon.svg" id="12_hbkfi"]
+[ext_resource type="PackedScene" uid="uid://crr72wgxk8sj5" path="res://items/item_pickup.tscn" id="13_cd1wr"]
+[ext_resource type="PackedScene" uid="uid://b6h3dwbos7jcp" path="res://items/laser_pistol.tscn" id="15_uerxf"]
+[ext_resource type="PackedScene" uid="uid://jm5p52mjd16y" path="res://items/shield.tscn" id="15_ywov1"]
+[ext_resource type="PackedScene" uid="uid://bcndkqdoq27kj" path="res://items/boost_skill.tscn" id="16_gkhlx"]
+
+[node name="World" type="Node2D"]
+
+[node name="map" type="TileMap" parent="."]
+tile_set = ExtResource("1_vig58")
+format = 2
+layer_1/name = ""
+layer_1/enabled = true
+layer_1/modulate = Color(1, 1, 1, 1)
+layer_1/y_sort_enabled = false
+layer_1/y_sort_origin = 0
+layer_1/z_index = 0
+layer_1/tile_data = PackedInt32Array()
+script = ExtResource("1_6ja63")
+room_options = Array[PackedScene]([ExtResource("4_vnvh3"), ExtResource("3_rph7r"), ExtResource("5_rj74q"), ExtResource("6_c40s7"), ExtResource("7_n108s"), ExtResource("8_2noo3"), ExtResource("9_gefrr"), ExtResource("10_40yui"), ExtResource("11_m6o5m")])
+entrance_room = ExtResource("6_ugdod")
+MAX_CELLS = 5000
+
+[node name="Player" parent="." instance=ExtResource("7_so6wi")]
+position = Vector2(149, 158)
+
+[node name="position marker" type="Sprite2D" parent="."]
+visible = false
+scale = Vector2(0.1, 0.1)
+texture = ExtResource("12_hbkfi")
+
+[node name="Objects" type="Node2D" parent="."]
+
+[node name="Item Pickup" parent="Objects" instance=ExtResource("13_cd1wr")]
+position = Vector2(322, 189)
+item_scene = ExtResource("15_uerxf")
+
+[node name="Item Pickup2" parent="Objects" instance=ExtResource("13_cd1wr")]
+position = Vector2(411, 188)
+item_scene = ExtResource("15_ywov1")
+
+[node name="Item Pickup3" parent="Objects" instance=ExtResource("13_cd1wr")]
+position = Vector2(503, 188)
+item_scene = ExtResource("16_gkhlx")

@@ -1,0 +1,11 @@
+res://cover_image.tscn
+res://items/Boost.gd
+res://RoomTileset.tres
+res://player.tscn
+res://world.tscn
+res://items/item_pickup.tscn
+res://enemies/enemy bullet.tscn
+res://Rooms/parkour.tscn
+res://Objects/passage.tscn
+res://UI/main_menu.tscn
+res://Pause Menu.gd

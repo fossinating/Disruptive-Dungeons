@@ -1,0 +1,21 @@
+[gd_scene load_steps=3 format=3 uid="uid://bjxgjiqmem6jm"]
+
+[ext_resource type="PackedScene" uid="uid://xsat7ypd4nrr" path="res://Rooms/Base Room.tscn" id="1_xxvw3"]
+[ext_resource type="PackedScene" uid="uid://bun34hy01s6yi" path="res://Objects/passage.tscn" id="2_srx43"]
+
+[node name="Hallway" instance=ExtResource("1_xxvw3")]
+width = 5
+height = 5
+
+[node name="TileMap" parent="." index="0"]
+layer_0/tile_data = PackedInt32Array(0, 65536, 3, 131073, 1, 0, 131074, 1, 0, 131075, 1, 0, 65539, 1, 0, 3, 131072, 3, 4, 196608, 3, 2, 131072, 3, 65538, 1, 0, 65537, 1, 0, 1, 131072, 3, 262148, 196608, 3, 262147, 131072, 3, 262146, 131072, 3, 262145, 131072, 3, 262144, 65536, 3, 196609, 1, 0, 196610, 1, 0, 196611, 1, 0)
+
+[node name="Passage" parent="Objects" index="0" instance=ExtResource("2_srx43")]
+position = Vector2(16, 80)
+position_i = Vector2i(0, 2)
+exit_dir = 3
+
+[node name="Passage2" parent="Objects" index="1" instance=ExtResource("2_srx43")]
+position = Vector2(144, 80)
+position_i = Vector2i(4, 2)
+exit_dir = 1
