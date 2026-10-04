@@ -26,6 +26,7 @@ const BASE_ZOOM := 1.75
 const SPEED_ZOOM_OUT := 0.35
 # Extra camera room below the floor so the slot cards don't cover the player.
 const HUD_MARGIN := 80
+const RAM_MIN_SPEED := 360.0
 
 enum Mode { TITLE, PLAY, BENCH, PAUSE, DEAD, WIN }
 
@@ -594,10 +595,11 @@ func _check_contact(e) -> void:
 		return
 	var away: Vector2 = (pp - e.global_position).normalized()
 	var speed: float = player.velocity.length()
-	if part_index("ram") >= 0 and speed > 200.0:
+	# Ram only counts above normal top speed: Boost, Heat Vent, recoil or a long fall.
+	if part_index("ram") >= 0 and speed > RAM_MIN_SPEED:
 		if e.ram_cd <= 0.0:
 			e.ram_cd = 0.35
-			e.take_damage(speed * 0.1 * pot("ram"), "Ram Plating", -away * 260.0 + Vector2(0, -120))
+			e.take_damage((8.0 + (speed - RAM_MIN_SPEED) * 0.05) * pot("ram"), "Ram Plating", -away * 260.0 + Vector2(0, -120))
 			player.velocity *= 0.8
 			player.invuln = maxf(player.invuln, 0.15)
 			sfx.play("slam", -8.0, 1.6)

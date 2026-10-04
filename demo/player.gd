@@ -131,7 +131,7 @@ func _step_weapons(dt: float) -> void:
 		shot_cd = BASIC_SHOT_DELAY * (0.5 if siphon else 1.0)
 		var dmg: float = BASIC_SHOT_DAMAGE * (game.pot("siphon") if siphon else 1.0)
 		if coil >= 1.0 and game.part_index("coil") >= 0:
-			game.chain_lightning(global_position, 22.0 * game.pot("coil"))
+			game.chain_lightning(global_position, 16.0 * game.pot("coil"))
 			coil = 0.0
 		game.fire(global_position, aim * 500.0, dmg, true, Color(0.9, 0.95, 1.0), "Basic shot", siphon)
 		add_heat(4.0)
@@ -167,7 +167,7 @@ func _step_timers(dt: float) -> void:
 		overheated = false
 	shield_delay -= dt
 	if shield_delay <= 0.0:
-		shield = minf(max_shield, shield + 20.0 * dt)
+		shield = minf(max_shield, shield + 12.0 * dt)
 	invuln -= dt
 	visible = invuln <= 0.0 or fmod(invuln, 0.12) < 0.08
 
@@ -208,16 +208,16 @@ func activate(id: String, pot: float) -> bool:
 				return false
 			for i in 6:
 				var a := aim.rotated(randf_range(-0.28, 0.28))
-				game.fire(global_position, a * randf_range(480.0, 560.0), 8.0 * pot, true, Color("ffb050"), "Shotgun", false, 0.35)
+				game.fire(global_position, a * randf_range(480.0, 560.0), 6.0 * pot, true, Color("ffb050"), "Shotgun", false, 0.35)
 			velocity -= aim * 180.0
-			add_heat(30.0)
+			add_heat(34.0)
 			game.sfx.play("shotgun", -2.0)
 			game.add_shake(4.0)
 			return true
 		"vent":
 			velocity = -aim * 560.0
 			slamming = false
-			game.vent_blast(global_position, aim, 16.0 * pot)
+			game.vent_blast(global_position, aim, 12.0 * pot)
 			heat = 0.0
 			overheated = false
 			game.sfx.play("vent", -2.0)
@@ -230,7 +230,7 @@ func activate(id: String, pot: float) -> bool:
 func _land_slam() -> void:
 	slamming = false
 	var fall := global_position.y - slam_start_y
-	var dmg: float = (18.0 + fall * 0.08) * game.pot("slam")
+	var dmg: float = (14.0 + fall * 0.06) * game.pot("slam")
 	game.shockwave(global_position + Vector2(0, RADIUS), 90.0, dmg, "Ground Slam", Parts.ui_color("green"))
 	game.sfx.play("slam", -2.0)
 	game.add_shake(7.0)
@@ -240,7 +240,7 @@ func hurt(amount: float, knock := Vector2.ZERO) -> void:
 	if invuln > 0.0 or game.god_mode:
 		return
 	invuln = 0.6
-	shield_delay = 2.5
+	shield_delay = 3.0
 	if shield > 0.0:
 		var absorbed := minf(shield, amount)
 		shield -= absorbed

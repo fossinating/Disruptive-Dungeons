@@ -23,7 +23,7 @@ const SHIELD_PENALTY := 0.7
 const PARTS := {
 	"ram": {
 		"name": "Ram Plating", "colors": ["blue"], "kind": "Weapon", "active": false, "cd": 0.0,
-		"desc": "Hit bots while moving fast to deal damage based on your speed. You take no contact damage while fast.",
+		"desc": "Hit bots while moving faster than your top speed (Boost, Heat Vent, long falls) to deal damage based on speed. No contact damage while that fast.",
 	},
 	"boost": {
 		"name": "Boost", "colors": ["blue"], "kind": "Utility", "active": true, "cd": 1.6,

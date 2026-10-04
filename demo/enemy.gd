@@ -9,13 +9,13 @@ const GRAVITY := 980.0
 const T := 32
 
 const STATS := {
-	"roller": {"hp": 25.0, "half": Vector2(12, 30), "contact": 12.0, "flying": false, "scale": 1.0, "tint": Color.WHITE},
-	"gunner": {"hp": 30.0, "half": Vector2(12, 30), "contact": 6.0, "flying": false, "scale": 1.0, "tint": Color(0.6, 0.78, 1.0)},
-	"charger": {"hp": 45.0, "half": Vector2(15, 38), "contact": 10.0, "flying": false, "scale": 1.2, "tint": Color(1.0, 0.7, 0.4)},
-	"scrapper": {"hp": 35.0, "half": Vector2(10, 24), "contact": 0.0, "flying": false, "scale": 0.8, "tint": Color(0.85, 0.6, 0.35)},
-	"drone": {"hp": 18.0, "half": Vector2(13, 13), "contact": 0.0, "flying": true, "scale": 1.0, "tint": Color.WHITE},
-	"jammer": {"hp": 40.0, "half": Vector2(16, 16), "contact": 0.0, "flying": true, "scale": 1.2, "tint": Color.WHITE},
-	"boss": {"hp": 700.0, "half": Vector2(30, 70), "contact": 18.0, "flying": false, "scale": 2.2, "tint": Color(1.0, 0.55, 0.45)},
+	"roller": {"hp": 35.0, "half": Vector2(12, 30), "contact": 12.0, "flying": false, "scale": 1.0, "tint": Color.WHITE},
+	"gunner": {"hp": 40.0, "half": Vector2(12, 30), "contact": 6.0, "flying": false, "scale": 1.0, "tint": Color(0.6, 0.78, 1.0)},
+	"charger": {"hp": 60.0, "half": Vector2(15, 38), "contact": 10.0, "flying": false, "scale": 1.2, "tint": Color(1.0, 0.7, 0.4)},
+	"scrapper": {"hp": 45.0, "half": Vector2(10, 24), "contact": 0.0, "flying": false, "scale": 0.8, "tint": Color(0.85, 0.6, 0.35)},
+	"drone": {"hp": 24.0, "half": Vector2(13, 13), "contact": 0.0, "flying": true, "scale": 1.0, "tint": Color.WHITE},
+	"jammer": {"hp": 55.0, "half": Vector2(16, 16), "contact": 0.0, "flying": true, "scale": 1.2, "tint": Color.WHITE},
+	"boss": {"hp": 900.0, "half": Vector2(30, 70), "contact": 18.0, "flying": false, "scale": 2.2, "tint": Color(1.0, 0.55, 0.45)},
 }
 
 const LABELS := {
