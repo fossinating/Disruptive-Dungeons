@@ -45,6 +45,10 @@ var summon_t := 4.0
 var last_attack := ""
 var airborne := false
 var dead := false
+# Elites: more health, faster, golden. The key carrier is always an elite.
+var elite := false
+var drops_key := false
+var speed_mult := 1.0
 
 var _sprite: Sprite2D
 
@@ -58,6 +62,13 @@ func setup(k: String, opts: Dictionary) -> void:
 	contact = s.contact
 	flying = s.flying
 	field_color = opts.get("color", "")
+	elite = opts.get("elite", false)
+	drops_key = opts.get("key", false)
+	if elite:
+		hp *= 2.5
+		max_hp = hp
+		half *= 1.15
+		speed_mult = 1.3
 	collision_layer = 1 << 7 # "enemy"
 	collision_mask = 1 if flying else (1 | 2)
 	var cs := CollisionShape2D.new()
@@ -73,8 +84,8 @@ func setup(k: String, opts: Dictionary) -> void:
 	add_child(cs)
 	_sprite = Sprite2D.new()
 	_sprite.texture = FLYER_TEX if flying else GROUND_TEX
-	_sprite.scale = Vector2.ONE * s.scale
-	_sprite.modulate = s.tint
+	_sprite.scale = Vector2.ONE * s.scale * (1.15 if elite else 1.0)
+	_sprite.modulate = Color(1.0, 0.82, 0.3) if elite else s.tint
 	if kind == "jammer":
 		_sprite.modulate = Parts.ui_color(field_color)
 	add_child(_sprite)
@@ -85,7 +96,7 @@ func hit_rect() -> Rect2:
 
 
 func label() -> String:
-	return LABELS[kind]
+	return ("Elite " if elite else "") + LABELS[kind]
 
 
 func step(dt: float) -> void:
@@ -137,6 +148,7 @@ func take_damage(amount: float, source: String, knock := Vector2.ZERO) -> void:
 # --- movement helpers ---
 
 func _ground_move(dt: float, dir: float, max_speed: float) -> void:
+	max_speed *= speed_mult
 	var on_floor := is_on_floor()
 	if dir != 0.0:
 		velocity.x = clampf(velocity.x + dir * max_speed * 10.0 * dt * (1.0 if on_floor else 0.3), -max_speed, max_speed)
@@ -181,7 +193,7 @@ func _gunner(dt: float, sees: bool, to_p: Vector2, dist: float) -> void:
 		"aim":
 			if timer <= 0.0:
 				state = "burst"
-				burst_left = 3
+				burst_left = 5 if elite else 3
 				timer = 0.0
 		"burst":
 			if timer <= 0.0:
@@ -208,9 +220,9 @@ func _charger(dt: float, sees: bool, to_p: Vector2) -> void:
 				_sprite.position.x = 0
 				state = "dash"
 				timer = 0.6
-				velocity.x = facing * 460.0
+				velocity.x = facing * 460.0 * speed_mult
 		"dash":
-			velocity.x = facing * 460.0
+			velocity.x = facing * 460.0 * speed_mult
 			if is_on_wall():
 				state = "stun"
 				timer = 1.0
@@ -335,6 +347,12 @@ func _boss_pick(to_p: Vector2) -> void:
 
 
 func _draw() -> void:
+	if elite:
+		draw_rect(Rect2(-half - Vector2(3, 3), half * 2.0 + Vector2(6, 6)), Color(1.0, 0.82, 0.3, 0.8), false, 2.0)
+	if drops_key:
+		var k := Vector2(0, -half.y - 24)
+		draw_circle(k + Vector2(-4, 0), 4.0, Color(1.0, 0.82, 0.3))
+		draw_rect(Rect2(k + Vector2(0, -1), Vector2(8, 2)), Color(1.0, 0.82, 0.3))
 	if hp < max_hp and kind != "boss":
 		var w := half.x * 2.0 + 10.0
 		draw_rect(Rect2(-w / 2, -half.y - 10, w, 4), Color(0, 0, 0, 0.7))

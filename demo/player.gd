@@ -52,8 +52,9 @@ func _ready() -> void:
 	add_child(_sprite)
 
 
-func reset_for_room() -> void:
-	velocity = Vector2.ZERO
+func reset_for_room(keep_velocity: bool) -> void:
+	if not keep_velocity:
+		velocity = Vector2.ZERO
 	slamming = false
 	hovering = false
 	heat = 0.0

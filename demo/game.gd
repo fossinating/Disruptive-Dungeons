@@ -33,7 +33,7 @@ enum Mode { TITLE, PLAY, BENCH, PAUSE, DEAD, WIN }
 var mode: int = Mode.TITLE
 var run: Dictionary = {}
 var room: Dictionary = {}
-var room_index := 0
+var room_pos := Vector2i.ZERO
 var player
 var enemies: Array = []
 var fields: Array = []
@@ -64,9 +64,10 @@ var _hud
 var _overlay: Control
 var _bench
 var _bodies: Array = []
-var _door_body: StaticBody2D
+var _lock_hint_t := 0.0
 var _smoke := false
 var _smoke_frames := 0
+var _smoke_cells: Array = []
 
 
 func _ready() -> void:
@@ -117,7 +118,9 @@ func _ready() -> void:
 
 	new_run()
 	_smoke = OS.get_cmdline_user_args().has("--smoke")
-	if _smoke:
+	if OS.get_cmdline_user_args().has("--traverse"):
+		_traverse_test.call_deferred()
+	elif _smoke:
 		mode = Mode.PLAY
 		run.stash = Parts.PARTS.keys()
 		for i in 4:
@@ -176,10 +179,16 @@ func _make_theme() -> Theme:
 # --- run and room flow ---
 
 func new_run() -> void:
+	var seed_value := randi()
 	run = {
 		"slots": [null, null, null, null],
 		"stash": [],
-		"visited": {},
+		"seed": seed_value,
+		"floor": Rooms.generate_floor(seed_value),
+		"cells": {},
+		"has_key": false,
+		"unlocked": false,
+		"revealed": false,
 		"stats": {"time": 0.0, "kills": 0, "damage": {}, "offline": {}, "offline_count": {}},
 	}
 	for c in Parts.COLORS:
@@ -190,11 +199,19 @@ func new_run() -> void:
 	win_timer = -1.0
 	disabled.clear()
 	raw_colors.clear()
-	load_room(0)
+	load_room(run.floor.start)
 
 
-func load_room(i: int) -> void:
-	room_index = i
+## What the run remembers about a room: visited, cleared, destroyed generators.
+func cell_state(pos: Vector2i) -> Dictionary:
+	if not run.cells.has(pos):
+		run.cells[pos] = {"visited": false, "cleared": false, "gens_dead": []}
+	return run.cells[pos]
+
+
+## Loads a room. `entry` is the side the player comes in from ("" = the room's spawn point).
+func load_room(pos: Vector2i, entry := "", from_pos := Vector2.ZERO) -> void:
+	room_pos = pos
 	for c in _entity_layer.get_children():
 		c.queue_free()
 	for c in _field_layer.get_children():
@@ -207,26 +224,46 @@ func load_room(i: int) -> void:
 	bolts.clear()
 	particles.clear()
 	floaters.clear()
-	room = Rooms.build(i, dominant_color())
+
+	var state := cell_state(pos)
+	var first_visit: bool = not state.visited
+	state.visited = true
+	room = Rooms.build(pos, run.floor, dominant_color())
+	if room.enemies.is_empty():
+		state.cleared = true
+	# Bots seal the room until they're destroyed.
+	door_open = state.cleared
+	if run.unlocked:
+		_set_openings(".", true)
+	if not door_open:
+		_set_openings("D")
 	_bg_view.set_room(room)
 	_wall_view.set_room(room)
 	_build_collision()
 
-	player.global_position = Vector2((room.spawn.x + 0.5) * T, (room.spawn.y + 0.5) * T)
-	player.reset_for_room()
-	for fd in room.fields:
-		_add_field(fd)
-	for ed in room.enemies:
-		var kind: String = ed[0]
-		spawn_enemy(kind, _enemy_pos(kind, ed[1], ed[2]), ed[3])
+	if entry == "":
+		player.global_position = Vector2((room.spawn.x + 0.5) * T, (room.spawn.y + 0.5) * T)
+		player.reset_for_room(false)
+	else:
+		_place_at_entry(entry, from_pos)
+		player.reset_for_room(true)
 
-	door_open = false
-	if room.enemies.is_empty() and not room.boss:
-		_open_door(false)
+	var gen_index := 0
+	for fd in room.fields:
+		if fd.has("generator"):
+			fd["gen_index"] = gen_index
+			gen_index += 1
+			if state.gens_dead.has(fd.gen_index):
+				continue
+		_add_field(fd)
+	if not state.cleared:
+		for ed in room.enemies:
+			var kind: String = ed[0]
+			spawn_enemy(kind, _enemy_pos(kind, ed[1], ed[2]), ed[3])
+
 	if room.has("bench"):
 		player.hp = player.max_hp
-		if not run.visited.has(i):
-			run.visited[i] = true
+		if first_visit:
 			var found := give_random_parts(room.give)
 			toast("Salvage pile: found %d parts. %s" % [found.size(), ", ".join(found.map(func(id): return Parts.PARTS[id].name))])
 		toast("Hull repaired.")
@@ -237,8 +274,38 @@ func load_room(i: int) -> void:
 	_camera.limit_bottom = room.h * T + HUD_MARGIN
 	_camera.global_position = player.global_position
 	_camera.reset_smoothing()
-	announce(room.name, room.sub)
+	if first_visit:
+		announce(room.name, room.sub)
 	_update_status()
+
+
+func _place_at_entry(entry: String, from_pos: Vector2) -> void:
+	match entry:
+		"left":
+			player.global_position = Vector2(T + 16, from_pos.y)
+		"right":
+			player.global_position = Vector2(room.w * T - T - 16, from_pos.y)
+		"up":
+			player.global_position = Vector2(from_pos.x, T + 16)
+		"down":
+			# Pop up onto the lid over the shaft.
+			player.global_position = Vector2(from_pos.x, (room.h - 2) * T - 16)
+			player.velocity.y = -200.0
+
+
+## Sets every opening tile to `tile`. Locked tiles stay locked unless `unlock` is set.
+func _set_openings(tile: String, unlock := false) -> void:
+	for d in room.openings:
+		for t in room.openings[d]:
+			if room.grid[t.y][t.x] == "L" and not unlock:
+				continue
+			room.grid[t.y][t.x] = tile
+
+
+func _go(dir: String) -> void:
+	var to: Vector2i = room_pos + Rooms.DIRS[dir]
+	if run.floor.cells.has(to):
+		load_room(to, Rooms.OPPOSITE[dir], player.global_position)
 
 
 func _enemy_pos(kind: String, tx: int, ty: int) -> Vector2:
@@ -255,7 +322,7 @@ func _build_collision() -> void:
 	_bodies.clear()
 	var solids := _new_body(1)
 	var plats := _new_body(2)
-	_door_body = _new_body(1)
+	var doors := _new_body(1)
 	for y in room.h:
 		var x := 0
 		while x < room.w:
@@ -272,8 +339,8 @@ func _build_collision() -> void:
 					_add_shape(solids, Rect2(start * T, y * T, length * T, T), false)
 				"-":
 					_add_shape(plats, Rect2(start * T, y * T, length * T, 8), true)
-				"D":
-					_add_shape(_door_body, Rect2(start * T, y * T, length * T, T), false)
+				"D", "L":
+					_add_shape(doors, Rect2(start * T, y * T, length * T, T), false)
 
 
 func _new_body(layer_bits: int) -> StaticBody2D:
@@ -320,23 +387,38 @@ func spawn_enemy(kind: String, pos: Vector2, opts: Dictionary):
 	return e
 
 
-func _open_door(with_sound := true) -> void:
+func _unseal() -> void:
 	door_open = true
-	for y in room.door:
-		room.grid[y][room.w - 1] = "."
-	if _door_body != null:
-		_door_body.queue_free()
-		_bodies.erase(_door_body)
-		_door_body = null
+	cell_state(room_pos).cleared = true
+	_set_openings(".")
+	_build_collision()
 	_wall_view.queue_redraw()
-	if with_sound:
-		sfx.play("door")
-		toast("Room clear. The exit is open →")
+	sfx.play("door")
+	toast("Room clear. The doors are open.")
 
 
-func _next_room() -> void:
-	if room_index + 1 < Rooms.COUNT:
-		load_room(room_index + 1)
+func _check_lock() -> void:
+	var cell: Dictionary = run.floor.cells[room_pos]
+	if cell.locked == "" or run.unlocked:
+		return
+	_lock_hint_t -= get_physics_process_delta_time()
+	for t in room.openings[cell.locked]:
+		if player.global_position.distance_to(Vector2((t.x + 0.5) * T, (t.y + 0.5) * T)) > 48.0:
+			continue
+		if run.has_key:
+			run.unlocked = true
+			run.has_key = false
+			for tt in room.openings[cell.locked]:
+				room.grid[tt.y][tt.x] = "." if door_open else "D"
+			_build_collision()
+			_wall_view.queue_redraw()
+			sfx.play("door", 0.0, 0.7)
+			toast("Boss door unlocked. The Foreman is waiting.")
+		elif _lock_hint_t <= 0.0:
+			_lock_hint_t = 4.0
+			sfx.play("deny")
+			toast("Locked. An elite somewhere on this floor carries the boss key.")
+		return
 
 
 func dominant_color() -> String:
@@ -418,11 +500,19 @@ func _physics_process(dt: float) -> void:
 		open_bench()
 
 	if not door_open and not room.boss and enemies.is_empty():
-		_open_door()
+		_unseal()
 		if room.salvage:
 			pickups.append({"pos": player.global_position + Vector2(0, -10), "vel": Vector2(randf_range(-60, 60), -260), "t": 0.0, "crate": true})
-	if door_open and player.global_position.x > (room.w - 1) * T + 2:
-		_next_room()
+	_check_lock()
+	var pp: Vector2 = player.global_position
+	if pp.x < 0.0:
+		_go("left")
+	elif pp.x > room.w * T:
+		_go("right")
+	elif pp.y < 0.0:
+		_go("up")
+	elif pp.y > room.h * T:
+		_go("down")
 
 	if win_timer > 0.0:
 		win_timer -= dt
@@ -439,22 +529,80 @@ func _physics_process(dt: float) -> void:
 
 func _smoke_step() -> void:
 	_smoke_frames += 1
+	if _smoke_cells.is_empty() and _smoke_frames == 1:
+		_smoke_cells = run.floor.cells.keys()
+		print("smoke: floor of %d rooms" % _smoke_cells.size())
 	var shots := OS.get_environment("DD_SHOTS")
 	if shots != "" and _smoke_frames % 90 == 60:
-		if room.has("bench"):
+		if room.has("bench") and _smoke_frames < 1000:
 			open_bench()
-		_save_shot.call_deferred(shots.path_join("room_%d.png" % room_index))
+		_save_shot.call_deferred(shots.path_join("room_%d_%d.png" % [room_pos.x, room_pos.y]))
 	if _smoke_frames % 90 == 0:
 		# Exercise each active part once per room, then move on.
 		for i in 4:
 			_try_activate(i)
-		if room_index + 1 < Rooms.COUNT:
-			print("smoke: room %d ok (%s), %d bots, %d fields" % [room_index, room.name, enemies.size(), fields.size()])
-			load_room(room_index + 1)
-		else:
-			print("smoke: room %d ok (%s), %d bots, %d fields" % [room_index, room.name, enemies.size(), fields.size()])
+		print("smoke: %s ok (%s, depth %d), %d bots, %d fields" % [room_pos, room.name, room.depth, enemies.size(), fields.size()])
+		if _smoke_cells.is_empty():
 			print("smoke: done")
 			get_tree().quit()
+		else:
+			load_room(_smoke_cells.pop_front())
+
+
+## Test mode: clears each room, then uses the real controls to leave through every door,
+## checking that each connection (including shafts and the locked boss door) is passable.
+func _traverse_test() -> void:
+	god_mode = true
+	sfx.muted = true
+	mode = Mode.PLAY
+	var fails := 0
+	var total := 0
+	for pos in run.floor.cells:
+		var cell: Dictionary = run.floor.cells[pos]
+		if cell.kind == "boss":
+			continue
+		for d in cell.doors:
+			total += 1
+			load_room(pos)
+			for e in enemies.duplicate():
+				e.take_damage(99999.0, "test")
+			win_timer = -1.0
+			for i in 3:
+				await get_tree().physics_frame
+			if cell.locked == d:
+				run.unlocked = false
+				run.has_key = true
+			var target: Vector2i = pos + Rooms.DIRS[d]
+			var y_floor := (Rooms.H - 1) * T - 16.0
+			player.velocity = Vector2.ZERO
+			match d:
+				"left":
+					player.global_position = Vector2(60, y_floor)
+					Input.action_press("dd_left")
+				"right":
+					player.global_position = Vector2(Rooms.W * T - 60, y_floor)
+					Input.action_press("dd_right")
+				"up":
+					player.global_position = Vector2(21.5 * T, 3 * T - 15)
+					Input.action_press("dd_jump")
+				"down":
+					player.global_position = Vector2(21.5 * T, (Rooms.H - 2) * T - 15)
+					Input.action_press("dd_down")
+					Input.action_press("dd_jump")
+			var arrived := false
+			for f in 300:
+				await get_tree().physics_frame
+				if room_pos == target:
+					arrived = true
+					break
+			for a in ["dd_left", "dd_right", "dd_jump", "dd_down"]:
+				Input.action_release(a)
+			var note := " (locked door)" if cell.locked == d else ""
+			print("traverse: %s -> %s going %s%s: %s" % [pos, target, d, note, "ok" if arrived else "FAILED, stuck at %s" % player.global_position])
+			if not arrived:
+				fails += 1
+	print("traverse: %d of %d connections passable" % [total - fails, total])
+	get_tree().quit()
 
 
 func _save_shot(path: String) -> void:
@@ -749,6 +897,9 @@ func on_enemy_killed(e) -> void:
 	burst(e.global_position, Color("ffb070"), 18, 220.0)
 	sfx.play("kill", -4.0, 0.7 if e.kind == "boss" else 1.0)
 	add_shake(10.0 if e.kind == "boss" else 2.0)
+	if e.drops_key:
+		pickups.append({"pos": e.global_position, "vel": Vector2(0, -300), "t": 0.0, "key": true})
+		toast("The elite dropped the boss key.")
 	if e.carried != null:
 		pickups.append({"pos": e.global_position, "vel": Vector2(0, -260), "t": 0.0, "slot": e.carried, "slot_index": e.carried_slot})
 	if e.kind == "boss":
@@ -852,6 +1003,10 @@ func _step_pickups(dt: float) -> void:
 
 func _collect(p: Dictionary) -> void:
 	sfx.play("pickup", -4.0)
+	if p.get("key", false):
+		run.has_key = true
+		toast("You have the boss key. The locked door is gold on the map.")
+		return
 	if p.get("crate", false):
 		var got := give_random_parts(1)
 		toast("Salvaged: %s (%s). Install it at the next workbench." % [Parts.PARTS[got[0]].name, Parts.color_line(got[0])])
@@ -960,7 +1115,11 @@ func _draw_fx(c: Node2D) -> void:
 		c.draw_rect(Rect2(g.pos + Vector2(-14, 18), Vector2(28, 3)), Color(0, 0, 0, 0.7))
 		c.draw_rect(Rect2(g.pos + Vector2(-14, 18), Vector2(28 * g.hp / g.max_hp, 3)), Color("e05050"))
 	for p in pickups:
-		if p.get("crate", false):
+		if p.get("key", false):
+			c.draw_circle(p.pos + Vector2(-4, 0), 5.0, ACCENT)
+			c.draw_rect(Rect2(p.pos + Vector2(0, -1.5), Vector2(10, 3)), ACCENT)
+			c.draw_rect(Rect2(p.pos + Vector2(6, 0), Vector2(2, 5)), ACCENT)
+		elif p.get("crate", false):
 			c.draw_rect(Rect2(p.pos - Vector2(8, 8), Vector2(16, 16)), Color("a07850"))
 			c.draw_rect(Rect2(p.pos - Vector2(8, 8), Vector2(16, 16)), ACCENT, false, 1.5)
 			c.draw_line(p.pos - Vector2(8, 8), p.pos + Vector2(8, 8), Color("6b5040"), 1.5)
@@ -999,10 +1158,15 @@ func _draw_hud(c: Control) -> void:
 
 	# Room, top right.
 	_text(c, Vector2(vs.x - 24, 42), room.name, 26, TEXT, HORIZONTAL_ALIGNMENT_RIGHT)
-	var sub := "Room %d of %d" % [room_index + 1, Rooms.COUNT]
-	if not room.has("bench"):
-		sub += "  ·  %d bots left" % enemies.size() if not door_open else "  ·  exit open →"
+	var sub := "Depth %d" % room.depth
+	sub += "  ·  %d bots left, doors sealed" % enemies.size() if not door_open else "  ·  doors open"
 	_text(c, Vector2(vs.x - 24, 68), sub, 18, MUTED, HORIZONTAL_ALIGNMENT_RIGHT)
+	_draw_minimap(c, vs)
+	if run.has_key:
+		var kr := Rect2(24, 90, 130, 28)
+		c.draw_rect(kr, Color("8a6a1a"))
+		c.draw_rect(kr, ACCENT, false, 2.0)
+		_text(c, kr.get_center() + Vector2(0, 7), "BOSS KEY", 17, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
 
 	# Boss bar.
 	for e in enemies:
@@ -1051,7 +1215,7 @@ func _draw_hud(c: Control) -> void:
 	if room.has("bench") and _near_bench():
 		prompt = "Press S to use the workbench"
 	if prompt != "":
-		var w := minf(760.0, vs.x - 48)
+		var w := minf(640.0, vs.x - 2.0 * (_minimap_width() + 40.0))
 		var lines := ceili(font.get_string_size(prompt, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x / (w - 32.0))
 		var r := Rect2((vs.x - w) / 2.0, 100, w, 20 + 24 * lines)
 		c.draw_rect(r, PANEL)
@@ -1068,6 +1232,80 @@ func _draw_hud(c: Control) -> void:
 		var a: float = clampf(banner.life, 0.0, 1.0)
 		_text(c, Vector2(vs.x / 2.0, vs.y * 0.42), banner.title, 44, Color(ACCENT, a), HORIZONTAL_ALIGNMENT_CENTER)
 		_text(c, Vector2(vs.x / 2.0, vs.y * 0.42 + 34), banner.sub, 20, Color(TEXT, a), HORIZONTAL_ALIGNMENT_CENTER)
+
+
+const MAP_CELL := Vector2(30, 20)
+const MAP_GAP := 8.0
+
+
+func _minimap_width() -> float:
+	return Rooms.GRID.x * (MAP_CELL.x + MAP_GAP) - MAP_GAP
+
+
+## Rooms you've visited, plus the rooms next to them, revealed as outlines (fog of war).
+func _room_known(pos: Vector2i) -> bool:
+	if run.revealed or cell_state(pos).visited:
+		return true
+	for d in run.floor.cells[pos].doors:
+		var n: Vector2i = pos + Rooms.DIRS[d]
+		if run.cells.has(n) and run.cells[n].visited:
+			return true
+	return false
+
+
+func _map_rect(origin: Vector2, p: Vector2i) -> Rect2:
+	return Rect2(origin + Vector2(p.x * (MAP_CELL.x + MAP_GAP), p.y * (MAP_CELL.y + MAP_GAP)), MAP_CELL)
+
+
+func _draw_minimap(c: Control, vs: Vector2) -> void:
+	var origin := Vector2(vs.x - 24 - _minimap_width(), 92)
+	var size := Vector2(_minimap_width(), Rooms.GRID.y * (MAP_CELL.y + MAP_GAP) - MAP_GAP)
+	c.draw_rect(Rect2(origin - Vector2(8, 8), size + Vector2(16, 16)), PANEL)
+	var font := ThemeDB.fallback_font
+	var cells: Dictionary = run.floor.cells
+	for pos in cells:
+		if not _room_known(pos):
+			continue
+		for d in ["right", "down"]:
+			if not cells[pos].doors.has(d):
+				continue
+			var to: Vector2i = pos + Rooms.DIRS[d]
+			if not _room_known(to):
+				continue
+			var a := _map_rect(origin, pos).get_center()
+			var b := _map_rect(origin, to).get_center()
+			var locked: bool = (cells[pos].locked == d or cells[to].locked == Rooms.OPPOSITE[d]) and not run.unlocked
+			c.draw_line(a, b, ACCENT if locked else Color(0.5, 0.46, 0.52), 3.0)
+			if locked:
+				c.draw_rect(Rect2((a + b) / 2.0 - Vector2(4, 4), Vector2(8, 8)), ACCENT)
+	for pos in cells:
+		if not _room_known(pos):
+			continue
+		var r := _map_rect(origin, pos)
+		var cell: Dictionary = cells[pos]
+		var st: Dictionary = cell_state(pos)
+		if st.visited:
+			c.draw_rect(r, Color(0.3, 0.26, 0.34) if st.cleared else Color(0.42, 0.2, 0.2))
+		else:
+			c.draw_rect(r, Color(0.1, 0.08, 0.12))
+			c.draw_rect(r, Color(0.45, 0.42, 0.48), false, 1.5)
+		var icon := ""
+		var icon_col := TEXT
+		match cell.kind:
+			"bench":
+				icon = "W"
+			"boss":
+				icon = "B"
+				icon_col = Color("ff7050")
+			"start":
+				icon = "S"
+		if cell.key and st.visited and not st.cleared:
+			icon = "K"
+			icon_col = ACCENT
+		if icon != "":
+			c.draw_string(font, r.get_center() + Vector2(-5, 6), icon, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, icon_col)
+		if pos == room_pos:
+			c.draw_rect(r.grow(2), ACCENT, false, 2.0)
 
 
 func _draw_slots(c: Control, vs: Vector2) -> void:
@@ -1236,9 +1474,9 @@ func _show_title() -> void:
 	mode = Mode.TITLE
 	_screen("Disruptive Dungeons", [
 		["Vertical-slice demo of the rework proposal", 22, MUTED],
-		"You are SP-1N, caught by a scrapper gang. Fight through one floor of the scrapshop and beat the Foreman. Every part you install has a color, and a disruption field shuts off every part of its color.",
+		"You are SP-1N, caught by a scrapper gang. Explore a generated floor of the scrapshop, take the boss key from an elite, and beat the Foreman behind the locked door. Every part you install has a color, and a disruption field shuts off every part of its color.",
 		["The question this slice tests: is it fun to lose one color of your build to a field and fight with the rest?", 18, ACCENT],
-		["A / D roll   ·   W or Space jump   ·   S + Space drop through platforms\nLeft click: basic shot   ·   Q E R F: use the part in that slot\nS at a workbench: change parts   ·   Esc: pause, room select and debug options", 17, MUTED],
+		["A / D roll   ·   W or Space jump   ·   S + Space drop through platforms\nLeft click: basic shot   ·   Q E R F: use the part in that slot\nS at a workbench: change parts   ·   Esc: pause and debug options", 17, MUTED],
 	], [["Start the escape", _start]])
 
 
@@ -1249,24 +1487,17 @@ func _start() -> void:
 
 func _show_pause() -> void:
 	mode = Mode.PAUSE
-	var box := _screen("Paused", [["Debug tools for trying things out quickly.", 18, MUTED]], [
+	_screen("Paused", [["Debug tools for trying things out quickly.", 18, MUTED]], [
 		["Resume", _resume],
 		["Restart run", _restart],
 		["Add every part to stash", _debug_all_parts],
+		["Reveal map", _debug_reveal],
+		["Give boss key", _debug_key],
+		["Go to boss door", _debug_boss_door],
 		["God mode: %s" % ("on" if god_mode else "off"), _toggle_god],
 		["Sound: %s" % ("off" if sfx.muted else "on"), _toggle_sound],
 		["Quit", _quit],
 	])
-	box.add_child(_label("Jump to room", 20, TEXT))
-	var rooms := HFlowContainer.new()
-	rooms.add_theme_constant_override("h_separation", 8)
-	rooms.add_theme_constant_override("v_separation", 8)
-	box.add_child(rooms)
-	for i in Rooms.COUNT:
-		var b := Button.new()
-		b.text = "%d. %s" % [i + 1, Rooms.build(i, "red").name]
-		b.pressed.connect(_jump_to_room.bind(i))
-		rooms.add_child(b)
 
 
 func _debug_all_parts() -> void:
@@ -1287,8 +1518,18 @@ func _toggle_sound() -> void:
 	_show_pause()
 
 
-func _jump_to_room(i: int) -> void:
-	load_room(i)
+func _debug_reveal() -> void:
+	run.revealed = true
+	_resume()
+
+
+func _debug_key() -> void:
+	run.has_key = true
+	_resume()
+
+
+func _debug_boss_door() -> void:
+	load_room(run.floor.boss_door)
 	_resume()
 
 
@@ -1314,7 +1555,7 @@ func _show_end(won: bool) -> void:
 		lines.append(["You beat the Foreman and escaped the scrapshop. In the full game this is floor 1 of 4.", 18, TEXT])
 	else:
 		lines.append(["The gang strips your parts and throws you back on the scrapheap.", 18, TEXT])
-	lines.append(["Time %d:%02d   ·   Bots destroyed %d   ·   Reached room %d of %d" % [int(st.time) / 60, int(st.time) % 60, st.kills, room_index + 1, Rooms.COUNT], 18, MUTED])
+	lines.append(["Time %d:%02d   ·   Bots destroyed %d   ·   Explored %d of %d rooms" % [int(st.time) / 60, int(st.time) % 60, st.kills, run.cells.values().filter(func(x): return x.visited).size(), run.floor.cells.size()], 18, MUTED])
 	var off := []
 	for c in Parts.COLORS:
 		off.append("%s %.0fs (%d×)" % [Parts.COLOR_NAME[c], st.offline[c], st.offline_count[c]])
