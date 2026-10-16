@@ -20,6 +20,8 @@ var carrier = null
 # Fields a boss drops expire; fields a boss carries can orbit it.
 var life := 0.0
 var orbit := {}
+# Safe pockets: circles (x, y, radius, in room space) the field doesn't cover.
+var holes: Array = []
 var on := true
 var warn := false
 var next_warn := false
@@ -41,6 +43,7 @@ func setup(d: Dictionary) -> void:
 	follow_speed = d.get("follow", 0.0)
 	life = d.get("life", 0.0)
 	orbit = d.get("orbit", {}).duplicate()
+	holes = d.get("holes", [])
 	_rect = ColorRect.new()
 	_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_mat = ShaderMaterial.new()
@@ -101,6 +104,9 @@ func step(dt: float, target: Vector2) -> void:
 
 
 func contains(p: Vector2) -> bool:
+	for h in holes:
+		if Vector2(h.x, h.y).distance_to(p) < h.z:
+			return false
 	if shape == "rect":
 		return Rect2(global_position, size).has_point(p)
 	return global_position.distance_to(p) < radius
@@ -127,6 +133,12 @@ func _layout() -> void:
 		_rect.size = Vector2(radius * 2.0, radius * 2.0)
 	_mat.set_shader_parameter("size", _rect.size)
 	_mat.set_shader_parameter("circle", 1.0 if shape == "circle" else 0.0)
+	var local := PackedVector3Array()
+	for h in holes:
+		local.append(Vector3(h.x - position.x - _rect.position.x, h.y - position.y - _rect.position.y, h.z))
+	while local.size() < 4:
+		local.append(Vector3(-9999, -9999, 0))
+	_mat.set_shader_parameter("holes", local)
 
 
 func _refresh() -> void:

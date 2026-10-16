@@ -41,6 +41,14 @@ func _draw() -> void:
 						draw_rect(Rect2(p + Vector2(T - 2, 0), Vector2(2, T)), WALL_EDGE)
 				"-":
 					draw_texture(PLATFORM_TEX, p)
+				"C":
+					# Looks almost like wall, with cracks you can spot if you look.
+					draw_rect(Rect2(p, Vector2(T, T)), WALL.lightened(0.06))
+					var crack := Color("16101a")
+					var k := float((x * 7 + y * 13) % 5)
+					draw_line(p + Vector2(6 + k, 2), p + Vector2(14, 15 - k), crack, 2.0)
+					draw_line(p + Vector2(14, 15 - k), p + Vector2(9, 30), crack, 2.0)
+					draw_line(p + Vector2(14, 15 - k), p + Vector2(26 - k, 20), crack, 1.5)
 				"D":
 					draw_rect(Rect2(p, Vector2(T, T)), Color("3a1f1f"))
 					for i in 3:
@@ -50,4 +58,4 @@ func _draw() -> void:
 func _solid(x: int, y: int) -> bool:
 	if x < 0 or y < 0 or x >= room.w or y >= room.h:
 		return true
-	return room.grid[y][x] == "#" or room.grid[y][x] == "D"
+	return room.grid[y][x] in ["#", "D", "C"]

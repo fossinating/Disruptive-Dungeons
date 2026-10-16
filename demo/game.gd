@@ -30,6 +30,8 @@ const SPEED_ZOOM_OUT := 0.35
 const HUD_MARGIN := 80
 const RAM_MIN_SPEED := 360.0
 const ELITE_SCHEMATIC_CHANCE := 0.25
+const CRACKED_WALL_HP := 25.0
+const SCRAP := {"mite": 1, "splitling": 1, "boss": 40}
 
 enum Mode { TITLE, PLAY, BENCH, PAUSE, DEAD, WIN }
 
@@ -193,6 +195,7 @@ func new_run() -> void:
 	run = {
 		"slots": [null, null, null, null],
 		"stash": [],
+		"scrap": 0,
 		"seed": seed_value,
 		"stats": {"time": 0.0, "kills": 0, "damage": {}, "offline": {}, "offline_count": {}, "rooms": 0},
 	}
@@ -230,7 +233,7 @@ func last_floor() -> bool:
 ## What the run remembers about a room: visited, cleared, destroyed generators.
 func cell_state(pos: Vector2i) -> Dictionary:
 	if not run.cells.has(pos):
-		run.cells[pos] = {"visited": false, "cleared": false, "gens_dead": []}
+		run.cells[pos] = {"visited": false, "cleared": false, "gens_dead": [], "wall_hp": CRACKED_WALL_HP, "chest_open": false, "stock": []}
 	return run.cells[pos]
 
 
@@ -258,6 +261,12 @@ func load_room(pos: Vector2i, entry := "", from_pos := Vector2.ZERO) -> void:
 	room = Rooms.build(pos, run.floor, dominant_color())
 	if room.enemies.is_empty():
 		state.cleared = true
+	var cell: Dictionary = run.floor.cells[pos]
+	if cell.secret != "" and state.wall_hp <= 0.0:
+		for t in room.openings[cell.secret]:
+			room.grid[t.y][t.x] = "."
+	if room.has("shop") and state.stock.is_empty():
+		state.stock = _roll_stock(room)
 	# Bots seal the room until they're destroyed.
 	door_open = state.cleared
 	if run.unlocked:
@@ -321,11 +330,14 @@ func _place_at_entry(entry: String, from_pos: Vector2) -> void:
 			player.velocity.y = -200.0
 
 
-## Sets every opening tile to `tile`. Locked tiles stay locked unless `unlock` is set.
+## Sets every opening tile to `tile`. Locked tiles stay locked unless `unlock` is set, and
+## cracked walls only open when they're broken.
 func _set_openings(tile: String, unlock := false) -> void:
 	for d in room.openings:
 		for t in room.openings[d]:
 			if room.grid[t.y][t.x] == "L" and not unlock:
+				continue
+			if room.grid[t.y][t.x] == "C":
 				continue
 			room.grid[t.y][t.x] = tile
 
@@ -363,7 +375,7 @@ func _build_collision() -> void:
 				x += 1
 			var length := x - start
 			match c:
-				"#":
+				"#", "C":
 					_add_shape(solids, Rect2(start * T, y * T, length * T, T), false)
 				"-":
 					_add_shape(plats, Rect2(start * T, y * T, length * T, 8), true)
@@ -569,6 +581,11 @@ func _physics_process(dt: float) -> void:
 	if room.has("bench") and _near_bench() and Input.is_action_just_pressed("dd_down") \
 			and not Input.is_action_pressed("dd_jump"):
 		open_bench()
+	var buy := _shop_index()
+	if buy >= 0 and Input.is_action_just_pressed("dd_down") and not Input.is_action_pressed("dd_jump"):
+		_buy(buy)
+	if door_open and _near_chest():
+		_open_chest()
 	if _near_lift() and Input.is_action_just_pressed("dd_down") and not Input.is_action_pressed("dd_jump"):
 		_ride_lift()
 		return
@@ -666,6 +683,8 @@ func _traverse_floor() -> Array:
 			continue
 		for d in cell.doors:
 			total += 1
+			if cell.secret == d:
+				cell_state(pos).wall_hp = 0.0
 			load_room(pos)
 			_kill_all()
 			win_timer = -1.0
@@ -778,8 +797,71 @@ func _bestiary_test() -> void:
 	if not (rebuilt and remembered):
 		fails += 1
 	fails += await _part_checks()
+	fails += await _room_checks()
 	print("bestiary: %d failures" % fails)
 	get_tree().quit()
+
+
+func _check(name: String, ok: bool) -> int:
+	print("rooms: %s %s" % [name, "ok" if ok else "FAILED"])
+	return 0 if ok else 1
+
+
+## Checks the special rooms: shooting open a cracked wall, the secret room's chest, buying
+## from the shop, and the safe pockets in a field.
+func _room_checks() -> int:
+	var fails := 0
+	var find := func(test: Callable):
+		for pos in run.floor.cells:
+			if test.call(run.floor.cells[pos]):
+				return pos
+		return null
+	var floor_y := (Rooms.H - 1) * T - 16.0
+
+	var src = find.call(func(c): return c.secret != "")
+	if src == null:
+		print("rooms: no secret room on this floor, skipping")
+	else:
+		load_room(src)
+		_kill_all()
+		await get_tree().physics_frame
+		var d: String = run.floor.cells[src].secret
+		var right := d == "right"
+		player.global_position = Vector2((room.w - 4) * T if right else 4 * T, floor_y)
+		for i in 8:
+			fire(player.global_position, Vector2(600.0 if right else -600.0, 0), 5.0, true, Color.WHITE, "Basic shot", false)
+			for f in 10:
+				await get_tree().physics_frame
+		var t: Vector2i = room.openings[d][1]
+		fails += _check("shooting breaks the cracked wall", cell_state(src).wall_hp <= 0.0 and room.grid[t.y][t.x] == ".")
+
+		load_room(src + Rooms.DIRS[d], Rooms.OPPOSITE[d], player.global_position)
+		player.global_position = Vector2((room.treasure.x + 0.5) * T, (room.treasure.y + 0.5) * T)
+		await get_tree().physics_frame
+		await get_tree().physics_frame
+		fails += _check("the hidden stash chest drops a schematic", cell_state(room_pos).chest_open and pickups.any(func(p): return p.has("schematic")))
+
+	var shop = find.call(func(c): return c.kind == "shop")
+	if shop == null:
+		print("rooms: no shop on this floor, skipping")
+	else:
+		load_room(shop)
+		var t: Vector2i = room.shop[0]
+		player.global_position = Vector2((t.x + 0.5) * T, floor_y)
+		await get_tree().physics_frame
+		run.scrap = 0
+		var stash_before: int = run.stash.size()
+		_buy(0)
+		var refused: bool = not cell_state(shop).stock[0].sold
+		run.scrap = 500
+		_buy(_shop_index())
+		fails += _check("the shop refuses without scrap and sells with it", refused and run.stash.size() == stash_before + 1 and run.scrap == 500 - cell_state(shop).stock[0].price)
+
+	load_room(run.floor.start)
+	var hole := Vector3(10 * T, 8 * T, 72.0)
+	var f = _spawn_field({"shape": "rect", "pos": Vector2(T, T), "size": Vector2(30 * T, 15 * T), "color": "red", "holes": [hole]})
+	fails += _check("safe pockets are safe", not f.contains(Vector2(hole.x, hole.y)) and f.contains(Vector2(hole.x + 120, hole.y)))
+	return fails
 
 
 ## Checks that the newer parts land hits: stomp, flak, afterburner and decoy.
@@ -1056,6 +1138,7 @@ func explode(at: Vector2, radius: float, dmg: float, friendly: bool, source: Str
 	for i in 16:
 		particle(at, Vector2.RIGHT.rotated(randf() * TAU) * randf_range(60, radius * 3.0), Color("ff8a3d").lerp(Color("ffd060"), randf()), 0.35, 4.0)
 	if friendly:
+		hit_cracked_wall(at, dmg, radius)
 		for e in enemies.duplicate():
 			if not e.dead and e.hit_rect().grow(radius).has_point(at):
 				e.take_damage(dmg, source, (e.global_position - at).normalized() * 200.0)
@@ -1210,6 +1293,7 @@ func shockwave(at: Vector2, radius: float, dmg: float, source: String, color: Co
 	for g in gens:
 		if g.pos.distance_to(at) < radius:
 			_hit_gen(g, dmg)
+	hit_cracked_wall(at, dmg, radius)
 
 
 func boss_slam(at: Vector2, radius: float, dmg: float) -> void:
@@ -1255,6 +1339,8 @@ func on_enemy_killed(e) -> void:
 		toast("The elite dropped the boss key.")
 	if e.kind == "boss" or (e.elite and randf() < ELITE_SCHEMATIC_CHANCE):
 		drop_schematic(e.global_position)
+	var scrap: int = SCRAP.get(e.kind, 10 if e.elite else 3)
+	_drop_scrap(e.global_position, scrap)
 	if e.carried != null:
 		pickups.append({"pos": e.global_position, "vel": Vector2(0, -260), "t": 0.0, "slot": e.carried, "slot_index": e.carried_slot})
 	if e.kind == "splitter":
@@ -1278,6 +1364,127 @@ func on_enemy_killed(e) -> void:
 			run.lift_open = true
 			announce("%s is scrap" % e.label(), "The freight lift is running. Stand on it and press S")
 	e.queue_free()
+
+
+## Damages the cracked wall if `at` is on or next to it. Returns true if it was hit.
+func hit_cracked_wall(at: Vector2, dmg: float, reach := 6.0) -> bool:
+	var d: String = run.floor.cells[room_pos].secret
+	if d == "" or cell_state(room_pos).wall_hp <= 0.0:
+		return false
+	var tiles: Array = room.openings[d]
+	var hit := false
+	for t in tiles:
+		if Rect2(t.x * T, t.y * T, T, T).grow(reach).has_point(at):
+			hit = true
+			break
+	if not hit:
+		return false
+	var st := cell_state(room_pos)
+	st.wall_hp -= dmg
+	for i in 5:
+		particle(at, Vector2(randf_range(-120, 120), randf_range(-160, 20)), Color("8a7a6a"), 0.4, 3.0)
+	if st.wall_hp > 0.0:
+		sfx.play("hit", -8.0, 0.5)
+		return true
+	for t in tiles:
+		room.grid[t.y][t.x] = "."
+		burst(Vector2((t.x + 0.5) * T, (t.y + 0.5) * T), Color("8a7a6a"), 12, 200.0)
+	_build_collision()
+	_wall_view.queue_redraw()
+	sfx.play("slam", -2.0, 0.7)
+	add_shake(5.0)
+	toast("The wall gave way. There's a hidden room behind it.")
+	return true
+
+
+func _drop_scrap(at: Vector2, amount: int) -> void:
+	# A few piles rather than one, so it sprays out a little.
+	var piles := clampi(amount / 4, 1, 6)
+	for i in piles:
+		var n := amount / piles + (1 if i < amount % piles else 0)
+		pickups.append({"pos": at, "vel": Vector2(randf_range(-140, 140), randf_range(-320, -180)), "t": 0.0, "scrap": n})
+
+
+## Shop stock: two parts you don't have and a hull patch. Prices go up each floor.
+func _roll_stock(r: Dictionary) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = r.shop_seed
+	var owned: Array = run.stash.duplicate()
+	for sl in run.slots:
+		if sl != null:
+			owned.append(sl.id)
+	var pool: Array = Unlocks.pool().filter(func(id): return not owned.has(id))
+	if pool.size() < 2:
+		pool = Unlocks.pool()
+	var stock := []
+	for k in 2:
+		var id: String = pool[rng.randi_range(0, pool.size() - 1)]
+		pool.erase(id)
+		var p: Dictionary = Parts.PARTS[id]
+		var special: bool = p.colors.size() > 1 or p.get("overload", false) or p.get("shield", false)
+		stock.append({"id": id, "price": 30 + 10 * r.shop_floor + (15 if special else 0), "sold": false})
+	stock.append({"id": "hull", "price": 20 + 5 * r.shop_floor, "sold": false})
+	return stock
+
+
+func _shop_index() -> int:
+	if not room.has("shop"):
+		return -1
+	for i in room.shop.size():
+		var t: Vector2i = room.shop[i]
+		var d: Vector2 = player.global_position - Vector2((t.x + 0.5) * T, (t.y + 0.5) * T)
+		if absf(d.x) < 22.0 and absf(d.y) < 48.0 and not cell_state(room_pos).stock[i].sold:
+			return i
+	return -1
+
+
+func _stock_name(item: Dictionary) -> String:
+	return "Hull patch (+40 hull)" if item.id == "hull" else Parts.PARTS[item.id].name
+
+
+func _buy(i: int) -> void:
+	var item: Dictionary = cell_state(room_pos).stock[i]
+	if run.scrap < item.price:
+		sfx.play("deny")
+		toast("Not enough scrap: %s costs %d and you have %d." % [_stock_name(item), item.price, run.scrap])
+		return
+	run.scrap -= item.price
+	item.sold = true
+	sfx.play("pickup", 0.0, 0.8)
+	if item.id == "hull":
+		player.hp = minf(player.max_hp, player.hp + 40.0)
+		toast("Hull patched.")
+	else:
+		run.stash.append(item.id)
+		toast("Bought %s (%s). Install it at a workbench." % [Parts.PARTS[item.id].name, Parts.color_line(item.id)])
+
+
+func _near_chest() -> bool:
+	if not room.has("treasure") or cell_state(room_pos).chest_open:
+		return false
+	var c := Vector2((room.treasure.x + 0.5) * T, (room.treasure.y + 0.5) * T)
+	return player.global_position.distance_to(c) < 40.0
+
+
+## Vault chests hold a rarer part; hidden rooms hold a schematic while any are left.
+func _open_chest() -> void:
+	cell_state(room_pos).chest_open = true
+	var at := Vector2((room.treasure.x + 0.5) * T, (room.treasure.y + 0.5) * T)
+	sfx.play("door", -2.0, 1.2)
+	burst(at, ACCENT, 20, 200.0)
+	if room.get("secret_room", false):
+		if not drop_schematic(at):
+			pickups.append({"pos": at, "vel": Vector2(-80, -300), "t": 0.0, "crate": true})
+			pickups.append({"pos": at, "vel": Vector2(80, -300), "t": 0.0, "crate": true})
+		_drop_scrap(at, 25)
+		return
+	var rare: Array = Unlocks.pool().filter(func(id):
+		var p: Dictionary = Parts.PARTS[id]
+		return p.colors.size() > 1 or p.get("overload", false) or p.get("shield", false))
+	if not rare.is_empty():
+		pickups.append({"pos": at, "vel": Vector2(-60, -320), "t": 0.0, "part": rare.pick_random()})
+	pickups.append({"pos": at, "vel": Vector2(60, -320), "t": 0.0, "crate": true})
+	_drop_scrap(at, 20)
 
 
 ## Drops a schematic for a part you haven't unlocked yet, if there are any left.
@@ -1339,6 +1546,8 @@ func _step_bullets(dt: float) -> void:
 		var alive: bool = b.life > 0.0
 		if not wall.is_empty():
 			particle(wall.position, -b.vel.normalized() * 60.0, b.color, 0.15, 2.0)
+			if b.friendly and b.blast <= 0.0:
+				hit_cracked_wall(wall.position - wall.normal * 2.0, b.dmg)
 			next = wall.position
 			if b.bounces > 0:
 				b.bounces -= 1
@@ -1380,6 +1589,9 @@ func _step_pickups(dt: float) -> void:
 	var keep := []
 	for p in pickups:
 		p.t += dt
+		# Scrap drifts toward you once it's landed.
+		if p.has("scrap") and p.t > 0.5 and p.pos.distance_to(player.global_position) < 110.0:
+			p.pos = p.pos.move_toward(player.global_position, 360.0 * dt)
 		p.vel.y += GRAVITY * dt
 		var next: Vector2 = p.pos + p.vel * dt
 		var hit := space.intersect_ray(PhysicsRayQueryParameters2D.create(p.pos, next + Vector2(0, 8), 1 | 2))
@@ -1396,10 +1608,17 @@ func _step_pickups(dt: float) -> void:
 
 
 func _collect(p: Dictionary) -> void:
-	sfx.play("pickup", -4.0)
+	sfx.play("pickup", -14.0 if p.has("scrap") else -4.0, 1.5 if p.has("scrap") else 1.0)
 	if p.get("key", false):
 		run.has_key = true
 		toast("You have the boss key. The locked door is gold on the map.")
+		return
+	if p.has("scrap"):
+		run.scrap += p.scrap
+		return
+	if p.has("part"):
+		run.stash.append(p.part)
+		toast("Found %s (%s). Install it at a workbench." % [Parts.PARTS[p.part].name, Parts.color_line(p.part)])
 		return
 	if p.has("schematic"):
 		var id: String = p.schematic
@@ -1506,6 +1725,31 @@ func _draw_fx(c: Node2D) -> void:
 		c.draw_rect(Rect2(b + Vector2(17, -14), Vector2(5, 14)), Color("6b5040"))
 		c.draw_rect(Rect2(b + Vector2(-10, -30), Vector2(14, 10)), Color("8a8a96"))
 		c.draw_string(font, b + Vector2(-34, -38), "WORKBENCH", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, ACCENT)
+	if room.has("shop"):
+		var stock: Array = cell_state(room_pos).stock
+		for i in room.shop.size():
+			var t: Vector2i = room.shop[i]
+			var b := Vector2((t.x + 0.5) * T, (t.y + 1) * T)
+			c.draw_rect(Rect2(b + Vector2(-12, -18), Vector2(24, 18)), Color("4a4050"))
+			c.draw_rect(Rect2(b + Vector2(-14, -20), Vector2(28, 4)), Color("6b5a6a"))
+			if i >= stock.size() or stock[i].sold:
+				continue
+			var col: Color = Color("d04a4a") if stock[i].id == "hull" else Parts.part_color(stock[i].id)
+			var bob := sin(Time.get_ticks_msec() / 300.0 + i) * 2.0
+			c.draw_rect(Rect2(b + Vector2(-8, -38 + bob), Vector2(16, 16)), col)
+			c.draw_rect(Rect2(b + Vector2(-8, -38 + bob), Vector2(16, 16)), Color.WHITE, false, 1.5)
+			var price := "%d" % stock[i].price
+			c.draw_string(font, b + Vector2(-10, -46), price, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, ACCENT if run.scrap >= stock[i].price else Color(0.6, 0.55, 0.55))
+	if room.has("treasure"):
+		var b := Vector2((room.treasure.x + 0.5) * T, (room.treasure.y + 1) * T)
+		var opened: bool = cell_state(room_pos).chest_open
+		c.draw_rect(Rect2(b + Vector2(-14, -18), Vector2(28, 18)), Color("7a5a30"))
+		c.draw_rect(Rect2(b + Vector2(-14, -18), Vector2(28, 18)), ACCENT, false, 1.5)
+		if opened:
+			c.draw_rect(Rect2(b + Vector2(-14, -30), Vector2(28, 6)), Color("5a4020"))
+		else:
+			c.draw_rect(Rect2(b + Vector2(-15, -24), Vector2(30, 8)), Color("8a6a3a"))
+			c.draw_rect(Rect2(b + Vector2(-3, -20), Vector2(6, 6)), ACCENT if door_open else Color(0.5, 0.45, 0.4))
 	if room.has("lift") and run.lift_open:
 		var l := Vector2((room.lift.x + 0.5) * T, (room.lift.y + 1) * T)
 		var glow := 0.6 + 0.4 * sin(Time.get_ticks_msec() / 200.0)
@@ -1531,6 +1775,12 @@ func _draw_fx(c: Node2D) -> void:
 			c.draw_circle(p.pos + Vector2(-4, 0), 5.0, ACCENT)
 			c.draw_rect(Rect2(p.pos + Vector2(0, -1.5), Vector2(10, 3)), ACCENT)
 			c.draw_rect(Rect2(p.pos + Vector2(6, 0), Vector2(2, 5)), ACCENT)
+		elif p.has("scrap"):
+			c.draw_circle(p.pos, 4.0 + minf(p.scrap, 6) * 0.5, Color("9a9aa6"))
+			c.draw_circle(p.pos, 2.0, Color("5f5866"))
+		elif p.has("part"):
+			c.draw_rect(Rect2(p.pos - Vector2(8, 8), Vector2(16, 16)), Parts.part_color(p.part))
+			c.draw_rect(Rect2(p.pos - Vector2(8, 8), Vector2(16, 16)), ACCENT, false, 2.0)
 		elif p.has("schematic"):
 			var bob := sin(Time.get_ticks_msec() / 250.0) * 3.0
 			var r := Rect2(p.pos - Vector2(10, 7 - bob), Vector2(20, 14))
@@ -1590,6 +1840,7 @@ func _draw_hud(c: Control) -> void:
 	var heat_col := Color("ff3d2e") if player.overheated else Color("ffa040")
 	_bar(c, Rect2(24, 68, 300, 12), player.heat / PlayerScript.MAX_HEAT, heat_col, "")
 	c.draw_string(font, Vector2(332, 62), "SHIELD", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("7fd6ff"))
+	_text(c, Vector2(334, 42), "SCRAP %d" % run.scrap, 18, Color("c8c8d4"))
 	c.draw_string(font, Vector2(332, 80), "OVERHEATED" if player.overheated else "HEAT", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, heat_col)
 
 	# Room, top right.
@@ -1652,6 +1903,13 @@ func _draw_hud(c: Control) -> void:
 		prompt = "Press S to use the workbench"
 	if _near_lift():
 		prompt = "Press S to ride the lift to floor %d" % (run.floor_num + 2)
+	var shop_i := _shop_index()
+	if shop_i >= 0:
+		var item: Dictionary = cell_state(room_pos).stock[shop_i]
+		var what := _stock_name(item)
+		if item.id != "hull":
+			what += " (%s): %s" % [Parts.color_line(item.id), Parts.PARTS[item.id].desc]
+		prompt = "Press S to buy for %d scrap (you have %d).  %s" % [item.price, run.scrap, what]
 	if prompt != "":
 		var w := minf(640.0, vs.x - 2.0 * (_minimap_width() + 40.0))
 		var lines := ceili(font.get_string_size(prompt, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x / (w - 32.0))
@@ -1684,6 +1942,8 @@ func _minimap_width() -> float:
 func _room_known(pos: Vector2i) -> bool:
 	if run.revealed or cell_state(pos).visited:
 		return true
+	if run.floor.cells[pos].kind == "secret":
+		return false
 	for d in run.floor.cells[pos].doors:
 		var n: Vector2i = pos + Rooms.DIRS[d]
 		if run.cells.has(n) and run.cells[n].visited:
@@ -1737,6 +1997,15 @@ func _draw_minimap(c: Control, vs: Vector2) -> void:
 				icon_col = Color("ff7050")
 			"start":
 				icon = "S"
+			"shop":
+				icon = "$"
+				icon_col = Color("c8c8d4")
+			"vault":
+				icon = "V"
+				icon_col = ACCENT
+			"secret":
+				icon = "?"
+				icon_col = ACCENT
 		if cell.key and st.visited and not st.cleared:
 			icon = "K"
 			icon_col = ACCENT

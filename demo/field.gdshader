@@ -7,6 +7,8 @@ uniform float circle = 0.0;
 uniform float active = 1.0;
 uniform float warn = 0.0;
 uniform float next_warn = 0.0;
+// Safe pockets cut out of the field: xy in pixels from the top-left, z = radius.
+uniform vec3 holes[4];
 
 void fragment() {
 	vec2 p = UV * size;
@@ -20,6 +22,13 @@ void fragment() {
 		edge_dist = r - d;
 	} else {
 		edge_dist = min(min(p.x, p.y), min(size.x - p.x, size.y - p.y));
+	}
+	for (int i = 0; i < 4; i++) {
+		float hd = length(p - holes[i].xy) - holes[i].z;
+		if (hd < 0.0) {
+			discard;
+		}
+		edge_dist = min(edge_dist, hd);
 	}
 	float stripe = step(0.5, fract((p.x + p.y) / 28.0 - TIME * 0.6));
 	vec3 c = col.rgb;

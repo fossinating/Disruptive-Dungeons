@@ -5,7 +5,8 @@ extends RefCounted
 ## "spine" of platforms so the top and bottom openings are always reachable, plus a random
 ## layout on each side. Rooms are rebuilt from their own seed, so they come back the same when
 ## you backtrack.
-## Grid legend: "#" solid, "-" one-way platform, "D" sealed door, "L" locked door, "." empty.
+## Grid legend: "#" solid, "-" one-way platform, "D" sealed door, "L" locked door,
+## "C" cracked wall hiding a secret room, "." empty.
 
 const T := 32
 const W := 44
@@ -28,8 +29,8 @@ const SIDES := [
 
 const FIELD_KINDS_BY_DEPTH := [
 	["static", "sweep", "pulse"],
-	["static", "sweep", "pulse", "cycle", "jammer", "generator"],
-	["static", "sweep", "pulse", "cycle", "jammer", "generator", "overlap", "follow"],
+	["static", "sweep", "pulse", "cycle", "jammer", "generator", "pockets"],
+	["static", "sweep", "pulse", "cycle", "jammer", "generator", "overlap", "follow", "pockets"],
 ]
 
 # Four floors from the scrapheap to the exit. Each has its own boss, a bigger map, more elites
@@ -153,18 +154,48 @@ static func generate_floor(seed_value: int, index := 0) -> Dictionary:
 		cells[wb2].kind = "bench"
 		cells[wb2].give = 3
 		candidates.erase(wb2)
+	# The gang's fence, somewhere past the first rooms.
+	var shop_rooms := candidates.filter(func(p): return depth[p] >= 2 and p != boss_from)
+	if not shop_rooms.is_empty():
+		var shop: Vector2i = shop_rooms[rng.randi_range(0, shop_rooms.size() - 1)]
+		cells[shop].kind = "shop"
+		candidates.erase(shop)
 	# The key goes to an elite in a combat room away from the boss door when possible.
 	var key_rooms := candidates.filter(func(p): return depth[p] >= 2 and p != boss_from)
 	if key_rooms.is_empty():
 		key_rooms = candidates
 	if not key_rooms.is_empty():
-		cells[key_rooms[rng.randi_range(0, key_rooms.size() - 1)]].key = true
+		var key_room: Vector2i = key_rooms[rng.randi_range(0, key_rooms.size() - 1)]
+		cells[key_room].key = true
+		candidates.erase(key_room)
+	# A vault: a guarded room with a chest, never the key room.
+	var vaults := candidates.filter(func(p): return depth[p] >= 2)
+	if not vaults.is_empty():
+		cells[vaults[rng.randi_range(0, vaults.size() - 1)]].kind = "vault"
+
+	# A secret room off the side of some room, behind a cracked wall. It isn't on the map.
+	var spots := []
+	for pos in cells:
+		if cells[pos].kind == "boss" or cells[pos].kind == "start":
+			continue
+		for d in ["left", "right"]:
+			var to: Vector2i = pos + DIRS[d]
+			if to.x >= 0 and to.x < GRID.x and not cells.has(to) and not cells[pos].doors.has(d):
+				spots.append([pos, d])
+	if not spots.is_empty():
+		var spot: Array = spots[rng.randi_range(0, spots.size() - 1)]
+		var secret: Vector2i = spot[0] + DIRS[spot[1]]
+		cells[secret] = _new_cell(rng)
+		_link(cells, spot[0], secret, spot[1])
+		cells[secret].kind = "secret"
+		cells[secret].depth = cells[spot[0]].depth + 1
+		cells[spot[0]].secret = spot[1]
 
 	return {"cells": cells, "start": start, "boss": boss, "boss_door": boss_from, "index": index}
 
 
 static func _new_cell(rng: RandomNumberGenerator) -> Dictionary:
-	return {"doors": {}, "kind": "combat", "depth": 0, "key": false, "locked": "", "give": 0, "seed": rng.randi()}
+	return {"doors": {}, "kind": "combat", "depth": 0, "key": false, "locked": "", "secret": "", "give": 0, "seed": rng.randi()}
 
 
 static func _link(cells: Dictionary, a: Vector2i, b: Vector2i, d: String) -> void:
@@ -210,6 +241,11 @@ static func build(pos: Vector2i, floor_data: Dictionary, dominant: String) -> Di
 		"start": _start_room(r) if index == 0 else _lift_room(r, index)
 		"bench": _bench_room(r, cell)
 		"boss": _boss_room(r, cell, index)
+		"shop": _shop_room(r, cell, rng, index)
+		"secret": _secret_room(r)
+		"vault":
+			_combat_room(r, cell, rng, dominant, index)
+			_vault(r, rng)
 		_: _combat_room(r, cell, rng, dominant, index)
 	if cell.kind != "boss":
 		_spine(r, cell)
@@ -239,6 +275,37 @@ static func _lift_room(r: Dictionary, index: int) -> void:
 	r.sub = "Floor %d of %d: %s" % [index + 1, FLOORS.size(), FLOORS[index].name]
 	_plat(r, 3, 12, 6)
 	_sign(r, 6, 16, "Another floor, another boss behind a locked door. An elite here carries the key.")
+
+
+static func _shop_room(r: Dictionary, cell: Dictionary, rng: RandomNumberGenerator, index: int) -> void:
+	r.name = "The Fence"
+	r.sub = "The gang's fence. It doesn't ask where your scrap came from."
+	_plat(r, 3, 12, 6)
+	_plat(r, W - 9, 12, 6)
+	# Three pedestals: two parts and a hull patch. Game fills in what's on them.
+	r.shop = [Vector2i(8, H - 2), Vector2i(11, H - 2), Vector2i(14, H - 2)]
+	r.shop_seed = cell.seed
+	r.shop_floor = index
+	_sign(r, 4, H - 2, "Stand at a pedestal and press S to buy. Bots drop scrap.")
+
+
+static func _secret_room(r: Dictionary) -> void:
+	r.name = "Hidden Stash"
+	r.sub = "Something the gang didn't want found."
+	_plat(r, 15, 13, 14)
+	_solid(r, 20, 12, 4, 1)
+	r.treasure = Vector2i(21, 11)
+	r.secret_room = true
+
+
+## A vault is a combat room with a chest in it, guarded by an extra elite.
+static func _vault(r: Dictionary, rng: RandomNumberGenerator) -> void:
+	r.name = "Vault"
+	r.sub = "Clear the room to open the chest. " + r.sub
+	r.treasure = Vector2i(21, 13)
+	var used := []
+	var guard: String = ["gunner", "charger", "shield"][rng.randi_range(0, 2)]
+	_place_enemy(r, rng, guard, used, {"elite": true})
 
 
 static func _bench_room(r: Dictionary, cell: Dictionary) -> void:
@@ -308,6 +375,13 @@ static func _combat_room(r: Dictionary, cell: Dictionary, rng: RandomNumberGener
 			var other: String = ["blue", "green", "red", "purple"][(["blue", "green", "red", "purple"].find(color) + rng.randi_range(1, 3)) % 4]
 			_rect(r, 6, 1, 18, H - 2, color)
 			_rect(r, 20, 1, 18, H - 2, other)
+		"pockets":
+			r.name = "Safe Pockets"
+			r.sub = "The whole room is %s. Only the clear circles are safe" % color
+			var holes := []
+			for k in 3:
+				holes.append(Vector3((7 + k * 15 + rng.randi_range(-2, 2)) * T, rng.randi_range(5, 13) * T, 72.0))
+			_rect(r, 1, 1, W - 2, H - 2, color, {"holes": holes})
 		"follow":
 			r.name = "The Stalker"
 			r.sub = "This field hunts you, in the color you rely on most"
@@ -398,8 +472,13 @@ static func _openings(r: Dictionary, cell: Dictionary) -> void:
 					tiles.append(Vector2i(x, H - 1))
 				# A one-way lid over the shaft: drop through it on purpose to go down.
 				_plat(r, 19, H - 2, 6)
+		var tile := "."
+		if cell.locked == d:
+			tile = "L"
+		elif cell.secret == d:
+			tile = "C"
 		for t in tiles:
-			r.grid[t.y][t.x] = "L" if cell.locked == d else "."
+			r.grid[t.y][t.x] = tile
 		r.openings[d] = tiles
 
 
