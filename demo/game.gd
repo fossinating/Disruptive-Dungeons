@@ -1,5 +1,6 @@
 extends Node2D
-## Vertical-slice demo for docs/rework-proposal.md: one floor, 12 parts, 6 bots and a boss.
+## Demo of docs/rework-proposal.md: four generated floors, each with its own boss, and the
+## parts, fields and bots from the proposal.
 ## Everything is built in code so the slice can change quickly while the plan is still moving.
 ## Run with `-- --smoke` to step through every room headless and quit (used for CI-style checks).
 
@@ -120,6 +121,8 @@ func _ready() -> void:
 	_smoke = OS.get_cmdline_user_args().has("--smoke")
 	if OS.get_cmdline_user_args().has("--traverse"):
 		_traverse_test.call_deferred()
+	elif OS.get_cmdline_user_args().has("--bestiary"):
+		_bestiary_test.call_deferred()
 	elif _smoke:
 		mode = Mode.PLAY
 		run.stash = Parts.PARTS.keys()
@@ -184,22 +187,37 @@ func new_run() -> void:
 		"slots": [null, null, null, null],
 		"stash": [],
 		"seed": seed_value,
-		"floor": Rooms.generate_floor(seed_value),
-		"cells": {},
-		"has_key": false,
-		"unlocked": false,
-		"revealed": false,
-		"stats": {"time": 0.0, "kills": 0, "damage": {}, "offline": {}, "offline_count": {}},
+		"stats": {"time": 0.0, "kills": 0, "damage": {}, "offline": {}, "offline_count": {}, "rooms": 0},
 	}
 	for c in Parts.COLORS:
 		run.stats.offline[c] = 0.0
 		run.stats.offline_count[c] = 0
 	player.hp = player.max_hp
 	player.shield = player.max_shield
+	start_floor(0)
+
+
+## Generates floor `index` (0-3) and drops you at its start. Parts and hull carry over.
+func start_floor(index: int) -> void:
+	if run.has("cells"):
+		run.stats.rooms += run.cells.values().filter(func(x): return x.visited).size()
+	run.floor_num = index
+	run.floor = Rooms.generate_floor(run.seed + index * 7919, index)
+	run.cells = {}
+	run.has_key = false
+	run.unlocked = false
+	run.revealed = false
+	run.lift_open = false
 	win_timer = -1.0
 	disabled.clear()
 	raw_colors.clear()
 	load_room(run.floor.start)
+	if index > 0:
+		announce("Floor %d: %s" % [index + 1, Rooms.FLOORS[index].name], "The boss key is on an elite again")
+
+
+func last_floor() -> bool:
+	return run.floor_num >= Rooms.FLOORS.size() - 1
 
 
 ## What the run remembers about a room: visited, cleared, destroyed generators.
@@ -254,12 +272,13 @@ func load_room(pos: Vector2i, entry := "", from_pos := Vector2.ZERO) -> void:
 			fd["gen_index"] = gen_index
 			gen_index += 1
 			if state.gens_dead.has(fd.gen_index):
+				gens.append({"pos": fd.generator, "hp": 0.0, "max_hp": 90.0, "field": null, "fd": fd})
 				continue
 		_add_field(fd)
 	if not state.cleared:
 		for ed in room.enemies:
 			var kind: String = ed[0]
-			spawn_enemy(kind, _enemy_pos(kind, ed[1], ed[2]), ed[3])
+			spawn_enemy(kind, _enemy_pos(kind, ed[1], ed[2]) + Vector2(ed[3].get("dx", 0.0), 0.0), ed[3])
 
 	if room.has("bench"):
 		player.hp = player.max_hp
@@ -363,13 +382,18 @@ func _add_shape(body: StaticBody2D, r: Rect2, one_way: bool) -> void:
 
 
 func _add_field(fd: Dictionary, carrier = null):
+	var f = _spawn_field(fd, carrier)
+	if fd.has("generator"):
+		gens.append({"pos": fd.generator, "hp": 90.0, "max_hp": 90.0, "field": f, "fd": fd})
+	return f
+
+
+func _spawn_field(fd: Dictionary, carrier = null):
 	var f = FieldScript.new()
 	f.setup(fd)
 	f.carrier = carrier
 	_field_layer.add_child(f)
 	fields.append(f)
-	if fd.has("generator"):
-		gens.append({"pos": fd.generator, "hp": 90.0, "max_hp": 90.0, "field": f})
 	return f
 
 
@@ -381,10 +405,43 @@ func spawn_enemy(kind: String, pos: Vector2, opts: Dictionary):
 	_entity_layer.add_child(e)
 	enemies.append(e)
 	if kind == "jammer":
-		e.field = _add_field({"shape": "circle", "pos": pos, "radius": 90.0, "color": opts.get("color", "red")}, e)
+		var fd := {"shape": "circle", "pos": pos, "radius": 130.0 if e.elite else 90.0, "color": opts.get("color", "red")}
+		# Elite Jammers carry a bigger field that changes color.
+		if e.elite:
+			fd["period"] = 5.0
+		e.field = _add_field(fd, e)
 	elif kind == "boss":
-		e.field = _add_field({"shape": "circle", "pos": pos, "radius": 130.0, "color": "red", "period": 5.0}, e)
+		match e.boss_id:
+			"foreman":
+				e.field = _add_field({"shape": "circle", "pos": pos, "radius": 130.0, "color": "red", "period": 5.0}, e)
+			"magnate":
+				e.field = _add_field({"shape": "circle", "pos": pos, "radius": 120.0, "color": dominant_color()}, e)
+				e.recolor_t = 6.0
+			"chopper":
+				var first := dominant_color()
+				var second: String = Parts.COLORS.filter(func(c): return c != first).pick_random()
+				for k in 2:
+					_add_field({"shape": "circle", "pos": pos, "radius": 85.0, "color": [first, second][k], "orbit": {"radius": 150.0, "speed": 1.3, "angle": PI * k}}, e)
+			"rust":
+				# Not carried: it stalks you on its own.
+				e.field = _add_field({"shape": "circle", "pos": pos + Vector2(0, -80), "radius": 110.0, "color": dominant_color(), "follow": 50.0})
+				e.recolor_t = 8.0
 	return e
+
+
+func add_temp_field(fd: Dictionary) -> void:
+	_spawn_field(fd)
+
+
+func add_gen_field(fd: Dictionary) -> void:
+	_add_field(fd)
+
+
+## A boss saw: a big, slow shot that bounces off walls a few times.
+func saw(from: Vector2, vel: Vector2, dmg: float, source: String) -> void:
+	fire(from, vel, dmg, false, Color("d8d8e0"), source, false, 5.0)
+	bullets[-1].bounces = 3
+	bullets[-1].saw = true
 
 
 func _unseal() -> void:
@@ -498,6 +555,9 @@ func _physics_process(dt: float) -> void:
 	if room.has("bench") and _near_bench() and Input.is_action_just_pressed("dd_down") \
 			and not Input.is_action_pressed("dd_jump"):
 		open_bench()
+	if _near_lift() and Input.is_action_just_pressed("dd_down") and not Input.is_action_pressed("dd_jump"):
+		_ride_lift()
+		return
 
 	if not door_open and not room.boss and enemies.is_empty():
 		_unseal()
@@ -531,7 +591,7 @@ func _smoke_step() -> void:
 	_smoke_frames += 1
 	if _smoke_cells.is_empty() and _smoke_frames == 1:
 		_smoke_cells = run.floor.cells.keys()
-		print("smoke: floor of %d rooms" % _smoke_cells.size())
+		print("smoke: floor 1 of %d rooms" % _smoke_cells.size())
 	var shots := OS.get_environment("DD_SHOTS")
 	if shots != "" and _smoke_frames % 90 == 60:
 		if room.has("bench") and _smoke_frames < 1000:
@@ -542,9 +602,13 @@ func _smoke_step() -> void:
 		for i in 4:
 			_try_activate(i)
 		print("smoke: %s ok (%s, depth %d), %d bots, %d fields" % [room_pos, room.name, room.depth, enemies.size(), fields.size()])
-		if _smoke_cells.is_empty():
+		if _smoke_cells.is_empty() and last_floor():
 			print("smoke: done")
 			get_tree().quit()
+		elif _smoke_cells.is_empty():
+			start_floor(run.floor_num + 1)
+			_smoke_cells = run.floor.cells.keys()
+			print("smoke: floor %d of %d rooms" % [run.floor_num + 1, _smoke_cells.size()])
 		else:
 			load_room(_smoke_cells.pop_front())
 
@@ -557,6 +621,26 @@ func _traverse_test() -> void:
 	mode = Mode.PLAY
 	var fails := 0
 	var total := 0
+	for floor_index in Rooms.FLOORS.size():
+		if floor_index > 0:
+			start_floor(floor_index)
+		var r := await _traverse_floor()
+		fails += r[0]
+		total += r[1]
+	print("traverse: %d of %d connections passable" % [total - fails, total])
+	get_tree().quit()
+
+
+## Test helper: destroys every bot, including any that split off while dying.
+func _kill_all() -> void:
+	for k in 5:
+		for e in enemies.duplicate():
+			e.take_damage(99999.0, "test")
+
+
+func _traverse_floor() -> Array:
+	var fails := 0
+	var total := 0
 	for pos in run.floor.cells:
 		var cell: Dictionary = run.floor.cells[pos]
 		if cell.kind == "boss":
@@ -564,8 +648,7 @@ func _traverse_test() -> void:
 		for d in cell.doors:
 			total += 1
 			load_room(pos)
-			for e in enemies.duplicate():
-				e.take_damage(99999.0, "test")
+			_kill_all()
 			win_timer = -1.0
 			for i in 3:
 				await get_tree().physics_frame
@@ -598,10 +681,80 @@ func _traverse_test() -> void:
 			for a in ["dd_left", "dd_right", "dd_jump", "dd_down"]:
 				Input.action_release(a)
 			var note := " (locked door)" if cell.locked == d else ""
-			print("traverse: %s -> %s going %s%s: %s" % [pos, target, d, note, "ok" if arrived else "FAILED, stuck at %s" % player.global_position])
+			print("traverse: floor %d %s -> %s going %s%s: %s" % [run.floor_num + 1, pos, target, d, note, "ok" if arrived else "FAILED, stuck at %s" % player.global_position])
 			if not arrived:
 				fails += 1
-	print("traverse: %d of %d connections passable" % [total - fails, total])
+	return [fails, total]
+
+
+## Test mode: spawns every bot, plain and elite, in a room with the player, lets them act for a
+## few seconds, then destroys them. Also checks that a Repair Bot rebuilds a generator.
+func _bestiary_test() -> void:
+	god_mode = true
+	sfx.muted = true
+	mode = Mode.PLAY
+	var fails := 0
+	var entries := []
+	for kind in EnemyScript.STATS:
+		if kind == "boss":
+			for b in EnemyScript.BOSSES:
+				entries.append(["boss", {"boss": b}])
+		else:
+			entries.append([kind, {}])
+	for entry in entries:
+		var kind: String = entry[0]
+		for elite in ([false] if kind == "boss" else [false, true]):
+			load_room(run.floor.boss if kind == "boss" else run.floor.start)
+			_kill_all()
+			win_timer = -1.0
+			player.global_position = Vector2(12 * T, (Rooms.H - 2) * T)
+			var opts := {"elite": elite, "color": "blue", "face": -1.0}
+			opts.merge(entry[1])
+			var e = spawn_enemy(kind, _enemy_pos(kind, 30, Rooms.H - 2), opts)
+			if kind == "boss":
+				# Straight to the second phase, so both get exercised.
+				for f in 200:
+					await get_tree().physics_frame
+				e.hp = e.max_hp * 0.4
+			var wounded = spawn_enemy("roller", _enemy_pos("roller", 36, Rooms.H - 2), {})
+			# Keep the doors (and the floor shaft) sealed, like a real fight.
+			door_open = false
+			_set_openings("D")
+			_build_collision()
+			wounded.hp = 5.0
+			for f in 240:
+				await get_tree().physics_frame
+			var alive: bool = is_instance_valid(e) and not e.dead
+			if alive and not Rect2(0, 0, room.w * T, room.h * T).has_point(e.global_position):
+				print("bestiary: %s left the room at %s" % [kind, e.global_position])
+				alive = false
+			var name: String = e.label() if alive and kind == "boss" else kind
+			_kill_all()
+			await get_tree().physics_frame
+			var ok: bool = alive and count_kind(kind) == 0
+			print("bestiary: %s%s %s" % ["elite " if elite else "", name, "ok" if ok else "FAILED"])
+			if not ok:
+				fails += 1
+
+	# Repair Bot vs. a destroyed generator.
+	load_room(run.floor.start)
+	_kill_all()
+	win_timer = -1.0
+	add_gen_field({"shape": "rect", "pos": Vector2(20 * T, T), "size": Vector2(10 * T, 10 * T), "color": "green", "generator": Vector2(25.5 * T, 5 * T - 15), "gen_index": 0})
+	_hit_gen(gens[0], 99999.0)
+	player.global_position = Vector2(3 * T, (Rooms.H - 2) * T)
+	spawn_enemy("repair", gens[0].pos + Vector2(200, 0), {})
+	var rebuilt := false
+	for f in 900:
+		await get_tree().physics_frame
+		if gens[0].hp > 0.0:
+			rebuilt = true
+			break
+	var remembered: bool = not cell_state(room_pos).gens_dead.has(0)
+	print("bestiary: repair bot rebuilds a generator %s" % ("ok" if rebuilt and remembered else "FAILED"))
+	if not (rebuilt and remembered):
+		fails += 1
+	print("bestiary: %d failures" % fails)
 	get_tree().quit()
 
 
@@ -747,7 +900,7 @@ func _check_contact(e) -> void:
 	if part_index("ram") >= 0 and speed > RAM_MIN_SPEED:
 		if e.ram_cd <= 0.0:
 			e.ram_cd = 0.35
-			e.take_damage((8.0 + (speed - RAM_MIN_SPEED) * 0.05) * pot("ram"), "Ram Plating", -away * 260.0 + Vector2(0, -120))
+			e.take_damage((8.0 + (speed - RAM_MIN_SPEED) * 0.05) * pot("ram"), "Ram Plating", -away * 260.0 + Vector2(0, -120), -away)
 			player.velocity *= 0.8
 			player.invuln = maxf(player.invuln, 0.15)
 			sfx.play("slam", -8.0, 1.6)
@@ -786,6 +939,21 @@ func _near_bench() -> bool:
 	return absf(d.x) < 40.0 and absf(d.y) < 48.0
 
 
+func _near_lift() -> bool:
+	if not room.has("lift") or not run.lift_open:
+		return false
+	var l := Vector2((room.lift.x + 0.5) * T, (room.lift.y + 0.5) * T)
+	var d: Vector2 = player.global_position - l
+	return absf(d.x) < 48.0 and absf(d.y) < 48.0
+
+
+func _ride_lift() -> void:
+	sfx.play("door", 0.0, 0.5)
+	# Some hull back between floors.
+	player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.4)
+	start_floor(run.floor_num + 1)
+
+
 func open_bench() -> void:
 	mode = Mode.BENCH
 	_bench.open()
@@ -800,7 +968,83 @@ func close_bench() -> void:
 # --- combat helpers used by player and enemies ---
 
 func fire(from: Vector2, vel: Vector2, dmg: float, friendly: bool, color: Color, source: String, pierce: bool, life := 1.4) -> void:
-	bullets.append({"pos": from, "vel": vel, "dmg": dmg, "friendly": friendly, "color": color, "source": source, "pierce": pierce, "life": life, "hit": []})
+	bullets.append({"pos": from, "vel": vel, "dmg": dmg, "friendly": friendly, "color": color, "source": source, "pierce": pierce, "life": life, "hit": [], "grav": 0.0, "blast": 0.0, "bounces": 0, "saw": false})
+
+
+## A slow shell with optional gravity. With `blast` > 0 it explodes when it hits anything.
+func shell(from: Vector2, vel: Vector2, dmg: float, friendly: bool, color: Color, source: String, grav: float, blast: float) -> void:
+	fire(from, vel, dmg, friendly, color, source, false, 4.0)
+	bullets[-1].grav = grav
+	bullets[-1].blast = blast
+
+
+func explode(at: Vector2, radius: float, dmg: float, friendly: bool, source: String) -> void:
+	sfx.play("slam", -8.0, 1.3)
+	add_shake(3.0)
+	for i in 16:
+		particle(at, Vector2.RIGHT.rotated(randf() * TAU) * randf_range(60, radius * 3.0), Color("ff8a3d").lerp(Color("ffd060"), randf()), 0.35, 4.0)
+	if friendly:
+		for e in enemies.duplicate():
+			if not e.dead and e.hit_rect().grow(radius).has_point(at):
+				e.take_damage(dmg, source, (e.global_position - at).normalized() * 200.0)
+		for g in gens:
+			if g.pos.distance_to(at) < radius + 14.0:
+				_hit_gen(g, dmg)
+	elif player.global_position.distance_to(at) < radius + PlayerScript.RADIUS:
+		player.hurt(dmg, (player.global_position - at).normalized() * 220.0 + Vector2(0, -120))
+
+
+## Where the bots aim. The player, unless something distracts them.
+func target_pos() -> Vector2:
+	return player.global_position
+
+
+## The first wall point between a and b, or b.
+func ray_end(a: Vector2, b: Vector2) -> Vector2:
+	var hit := get_world_2d().direct_space_state.intersect_ray(PhysicsRayQueryParameters2D.create(a, b, 1))
+	return b if hit.is_empty() else hit.position
+
+
+func nearest_field(from: Vector2):
+	var best = null
+	var best_d := INF
+	for f in fields:
+		if f.dead or not f.on:
+			continue
+		var d: float = f.distance_to_point(from)
+		if d < best_d:
+			best = f
+			best_d = d
+	return best
+
+
+## For Repair Bots: the hurt bot that's missing the most health.
+func most_damaged_enemy(exclude):
+	var best = null
+	var best_missing := 4.0
+	for e in enemies:
+		if e == exclude or e.dead or e.kind == "boss":
+			continue
+		if e.max_hp - e.hp > best_missing:
+			best = e
+			best_missing = e.max_hp - e.hp
+	return best
+
+
+func dead_gen():
+	for g in gens:
+		if g.hp <= 0.0:
+			return g
+	return null
+
+
+func rebuild_gen(g: Dictionary) -> void:
+	g.hp = g.max_hp
+	g.field = _spawn_field(g.fd)
+	cell_state(room_pos).gens_dead.erase(g.fd.gen_index)
+	sfx.play("door", -4.0, 1.4)
+	burst(g.pos, Parts.ui_color(g.field.color), 20, 160.0)
+	toast("A Repair Bot rebuilt the generator.")
 
 
 func los(a: Vector2, b: Vector2) -> bool:
@@ -843,7 +1087,7 @@ func vent_blast(from: Vector2, dir: Vector2, dmg: float) -> void:
 	for e in enemies.duplicate():
 		var to: Vector2 = e.global_position - from
 		if to.length() < 90.0 and absf(dir.angle_to(to)) < 0.7:
-			e.take_damage(dmg, "Heat Vent", dir * 300.0)
+			e.take_damage(dmg, "Heat Vent", dir * 300.0, dir)
 
 
 func shockwave(at: Vector2, radius: float, dmg: float, source: String, color: Color) -> void:
@@ -902,11 +1146,26 @@ func on_enemy_killed(e) -> void:
 		toast("The elite dropped the boss key.")
 	if e.carried != null:
 		pickups.append({"pos": e.global_position, "vel": Vector2(0, -260), "t": 0.0, "slot": e.carried, "slot_index": e.carried_slot})
+	if e.kind == "splitter":
+		# Elites split into three.
+		var n := 3 if e.elite else 2
+		for i in n:
+			var s = spawn_enemy("splitling", e.global_position + Vector2((i - (n - 1) / 2.0) * 22.0, 8.0), {})
+			s.velocity = Vector2((i - (n - 1) / 2.0) * 200.0, -260.0)
+			s.speed_mult = e.speed_mult
 	if e.kind == "boss":
-		win_timer = 2.5
-		announce("The Foreman is scrap", "The exit is yours")
 		for other in enemies.duplicate():
 			other.take_damage(999.0, "Boss death")
+		for f in fields:
+			f.dead = true
+		for g in gens:
+			g.hp = 0.0
+		if last_floor():
+			win_timer = 2.5
+			announce("%s is scrap" % e.label(), "The exit is yours")
+		else:
+			run.lift_open = true
+			announce("%s is scrap" % e.label(), "The freight lift is running. Stand on it and press S")
 	e.queue_free()
 
 
@@ -917,6 +1176,7 @@ func _hit_gen(g: Dictionary, dmg: float) -> void:
 	record_damage("Generator", 0.0)
 	if g.hp <= 0.0:
 		g.field.dead = true
+		cell_state(room_pos).gens_dead.append(g.fd.gen_index)
 		burst(g.pos, Parts.ui_color(g.field.color), 30, 260.0)
 		sfx.play("kill")
 		add_shake(6.0)
@@ -949,22 +1209,31 @@ func _step_bullets(dt: float) -> void:
 	var keep := []
 	for b in bullets:
 		b.life -= dt
+		b.vel.y += b.grav * dt
 		var next: Vector2 = b.pos + b.vel * dt
-		var q := PhysicsRayQueryParameters2D.create(b.pos, next, 1)
+		# Shells land on platforms too.
+		var q := PhysicsRayQueryParameters2D.create(b.pos, next, 1 | (2 if b.blast > 0.0 and b.vel.y > 0.0 else 0))
 		var wall := space.intersect_ray(q)
 		var alive: bool = b.life > 0.0
 		if not wall.is_empty():
 			particle(wall.position, -b.vel.normalized() * 60.0, b.color, 0.15, 2.0)
-			alive = false
+			next = wall.position
+			if b.bounces > 0:
+				b.bounces -= 1
+				b.vel = b.vel.bounce(wall.normal)
+				next += wall.normal * 2.0
+				sfx.play("hit", -14.0, 1.6)
+			else:
+				alive = false
 		b.pos = next
 		if alive and b.friendly:
 			for e in enemies.duplicate():
 				if e.dead or b.hit.has(e):
 					continue
 				if e.hit_rect().grow(3.0).has_point(b.pos):
-					e.take_damage(b.dmg, b.source, b.vel.normalized() * 60.0)
+					var landed: bool = b.blast > 0.0 or e.take_damage(b.dmg, b.source, b.vel.normalized() * 60.0, b.vel.normalized())
 					b.hit.append(e)
-					if not b.pierce:
+					if not b.pierce or not landed:
 						alive = false
 						break
 			if alive:
@@ -973,11 +1242,14 @@ func _step_bullets(dt: float) -> void:
 						_hit_gen(g, b.dmg)
 						alive = false
 						break
-		elif alive and b.pos.distance_to(player.global_position) < PlayerScript.RADIUS + 3.0:
-			player.hurt(b.dmg, b.vel.normalized() * 120.0)
+		elif alive and b.pos.distance_to(player.global_position) < PlayerScript.RADIUS + (12.0 if b.saw else 3.0):
+			if b.blast <= 0.0:
+				player.hurt(b.dmg, b.vel.normalized() * 120.0)
 			alive = false
 		if alive:
 			keep.append(b)
+		elif b.blast > 0.0:
+			explode(b.pos, b.blast, b.dmg, b.friendly, b.source)
 	bullets = keep
 
 
@@ -1104,8 +1376,18 @@ func _draw_fx(c: Node2D) -> void:
 		c.draw_rect(Rect2(b + Vector2(17, -14), Vector2(5, 14)), Color("6b5040"))
 		c.draw_rect(Rect2(b + Vector2(-10, -30), Vector2(14, 10)), Color("8a8a96"))
 		c.draw_string(font, b + Vector2(-34, -38), "WORKBENCH", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, ACCENT)
+	if room.has("lift") and run.lift_open:
+		var l := Vector2((room.lift.x + 0.5) * T, (room.lift.y + 1) * T)
+		var glow := 0.6 + 0.4 * sin(Time.get_ticks_msec() / 200.0)
+		c.draw_rect(Rect2(l + Vector2(-40, -6), Vector2(80, 6)), Color("8a8a96"))
+		c.draw_rect(Rect2(l + Vector2(-40, -96), Vector2(4, 90)), Color("5f5866"))
+		c.draw_rect(Rect2(l + Vector2(36, -96), Vector2(4, 90)), Color("5f5866"))
+		c.draw_rect(Rect2(l + Vector2(-36, -10), Vector2(72, 4)), Color(ACCENT, glow))
+		c.draw_string(font, l + Vector2(-30, -104), "LIFT  ↑", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, ACCENT)
 	for g in gens:
 		if g.hp <= 0.0:
+			# A wrecked generator, which a Repair Bot can rebuild.
+			c.draw_rect(Rect2(g.pos - Vector2(10, -4), Vector2(20, 10)), Color("2a2430"))
 			continue
 		var col: Color = Parts.ui_color(g.field.color)
 		c.draw_rect(Rect2(g.pos - Vector2(10, 14), Vector2(20, 28)), Color("3c3444"))
@@ -1127,6 +1409,17 @@ func _draw_fx(c: Node2D) -> void:
 			c.draw_rect(Rect2(p.pos - Vector2(8, 8), Vector2(16, 16)), Parts.part_color(p.slot.id))
 			c.draw_rect(Rect2(p.pos - Vector2(8, 8), Vector2(16, 16)), Color.WHITE, false, 1.5)
 	for b in bullets:
+		if b.saw:
+			var spin := Time.get_ticks_msec() / 40.0
+			c.draw_circle(b.pos, 11.0, Color("8a8a96"))
+			for k in 6:
+				var a := Vector2.RIGHT.rotated(spin + k * TAU / 6.0)
+				c.draw_line(b.pos + a * 6.0, b.pos + a * 14.0, b.color, 3.0)
+			continue
+		if b.blast > 0.0:
+			c.draw_circle(b.pos, 6.0, Color("3a3030"))
+			c.draw_circle(b.pos, 3.0, b.color if fmod(b.life, 0.25) < 0.12 else Color("ffe0a0"))
+			continue
 		var tail: Vector2 = b.vel.normalized() * (6.0 if b.friendly else 4.0)
 		c.draw_line(b.pos - tail, b.pos + tail * 0.3, b.color, 3.0 if b.friendly else 4.0)
 	for p in particles:
@@ -1158,7 +1451,7 @@ func _draw_hud(c: Control) -> void:
 
 	# Room, top right.
 	_text(c, Vector2(vs.x - 24, 42), room.name, 26, TEXT, HORIZONTAL_ALIGNMENT_RIGHT)
-	var sub := "Depth %d" % room.depth
+	var sub := "Floor %d  ·  Depth %d" % [run.floor_num + 1, room.depth]
 	sub += "  ·  %d bots left, doors sealed" % enemies.size() if not door_open else "  ·  doors open"
 	_text(c, Vector2(vs.x - 24, 68), sub, 18, MUTED, HORIZONTAL_ALIGNMENT_RIGHT)
 	_draw_minimap(c, vs)
@@ -1174,7 +1467,7 @@ func _draw_hud(c: Control) -> void:
 			var w := minf(560.0, vs.x - 80)
 			var r := Rect2((vs.x - w) / 2.0, 96, w, 18)
 			_bar(c, r, e.hp / e.max_hp, Color("e06040"), "")
-			_text(c, Vector2(vs.x / 2.0, 90), "THE FOREMAN", 18, TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+			_text(c, Vector2(vs.x / 2.0, 90), e.label().to_upper(), 18, TEXT, HORIZONTAL_ALIGNMENT_CENTER)
 
 	_draw_slots(c, vs)
 
@@ -1214,6 +1507,8 @@ func _draw_hud(c: Control) -> void:
 			prompt = s.text
 	if room.has("bench") and _near_bench():
 		prompt = "Press S to use the workbench"
+	if _near_lift():
+		prompt = "Press S to ride the lift to floor %d" % (run.floor_num + 2)
 	if prompt != "":
 		var w := minf(640.0, vs.x - 2.0 * (_minimap_width() + 40.0))
 		var lines := ceili(font.get_string_size(prompt, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x / (w - 32.0))
@@ -1474,7 +1769,7 @@ func _show_title() -> void:
 	mode = Mode.TITLE
 	_screen("Disruptive Dungeons", [
 		["Vertical-slice demo of the rework proposal", 22, MUTED],
-		"You are SP-1N, caught by a scrapper gang. Explore a generated floor of the scrapshop, take the boss key from an elite, and beat the Foreman behind the locked door. Every part you install has a color, and a disruption field shuts off every part of its color.",
+		"You are SP-1N, caught by a scrapper gang. Fight up through four generated floors of the scrapshop. On each one, take the boss key from an elite and beat the boss behind the locked door. Every part you install has a color, and a disruption field shuts off every part of its color.",
 		["The question this slice tests: is it fun to lose one color of your build to a field and fight with the rest?", 18, ACCENT],
 		["A / D roll   ·   W or Space jump   ·   S + Space drop through platforms\nLeft click: basic shot   ·   Q E R F: use the part in that slot\nS at a workbench: change parts   ·   Esc: pause and debug options", 17, MUTED],
 	], [["Start the escape", _start]])
@@ -1494,6 +1789,7 @@ func _show_pause() -> void:
 		["Reveal map", _debug_reveal],
 		["Give boss key", _debug_key],
 		["Go to boss door", _debug_boss_door],
+		["Skip to next floor", _debug_next_floor],
 		["God mode: %s" % ("on" if god_mode else "off"), _toggle_god],
 		["Sound: %s" % ("off" if sfx.muted else "on"), _toggle_sound],
 		["Quit", _quit],
@@ -1533,6 +1829,12 @@ func _debug_boss_door() -> void:
 	_resume()
 
 
+func _debug_next_floor() -> void:
+	if not last_floor():
+		start_floor(run.floor_num + 1)
+	_resume()
+
+
 func _quit() -> void:
 	get_tree().quit()
 
@@ -1552,10 +1854,11 @@ func _show_end(won: bool) -> void:
 	var st: Dictionary = run.stats
 	var lines := []
 	if won:
-		lines.append(["You beat the Foreman and escaped the scrapshop. In the full game this is floor 1 of 4.", 18, TEXT])
+		lines.append(["You beat Boss Rust and escaped the scrapshop.", 18, TEXT])
 	else:
-		lines.append(["The gang strips your parts and throws you back on the scrapheap.", 18, TEXT])
-	lines.append(["Time %d:%02d   ·   Bots destroyed %d   ·   Explored %d of %d rooms" % [int(st.time) / 60, int(st.time) % 60, st.kills, run.cells.values().filter(func(x): return x.visited).size(), run.floor.cells.size()], 18, MUTED])
+		lines.append(["The gang strips your parts and throws you back on the scrapheap. You made it to floor %d of %d, %s." % [run.floor_num + 1, Rooms.FLOORS.size(), Rooms.FLOORS[run.floor_num].name], 18, TEXT])
+	var rooms_seen: int = st.rooms + run.cells.values().filter(func(x): return x.visited).size()
+	lines.append(["Time %d:%02d   ·   Bots destroyed %d   ·   Rooms explored %d" % [int(st.time) / 60, int(st.time) % 60, st.kills, rooms_seen], 18, MUTED])
 	var off := []
 	for c in Parts.COLORS:
 		off.append("%s %.0fs (%d×)" % [Parts.COLOR_NAME[c], st.offline[c], st.offline_count[c]])

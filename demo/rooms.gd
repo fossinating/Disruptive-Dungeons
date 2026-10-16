@@ -11,7 +11,6 @@ const T := 32
 const W := 44
 const H := 18
 const GRID := Vector2i(6, 4)
-const ROOM_COUNT := 10
 const DIRS := {"left": Vector2i(-1, 0), "right": Vector2i(1, 0), "up": Vector2i(0, -1), "down": Vector2i(0, 1)}
 const OPPOSITE := {"left": "right", "right": "left", "up": "down", "down": "up"}
 const SIDE_DOOR_ROWS := [14, 15, 16]
@@ -33,24 +32,66 @@ const FIELD_KINDS_BY_DEPTH := [
 	["static", "sweep", "pulse", "cycle", "jammer", "generator", "overlap", "follow"],
 ]
 
-const ENEMIES_BY_DEPTH := [
-	["roller", "roller", "drone", "gunner"],
-	["roller", "drone", "gunner", "charger"],
-	["roller", "drone", "gunner", "charger", "scrapper"],
+# Four floors from the scrapheap to the exit. Each has its own boss, a bigger map, more elites
+# and a roster that brings in a few new bots at a time (by depth: near the start, middle, deep).
+const FLOORS := [
+	{
+		"name": "The Scrapheap", "rooms": 10, "boss": "foreman", "elite": 0.0,
+		"enemies": [
+			["roller", "roller", "drone", "gunner", "mites"],
+			["roller", "drone", "gunner", "charger", "mites", "splitter"],
+			["roller", "drone", "gunner", "charger", "scrapper", "splitter"],
+		],
+	},
+	{
+		"name": "The Sorting Line", "rooms": 11, "boss": "magnate", "elite": 0.1,
+		"enemies": [
+			["roller", "drone", "gunner", "mites", "shield"],
+			["gunner", "charger", "shield", "bomber", "sniper", "magnet"],
+			["charger", "scrapper", "shield", "bomber", "sniper", "magnet", "splitter"],
+		],
+	},
+	{
+		"name": "The Chop Shop", "rooms": 12, "boss": "chopper", "elite": 0.18,
+		"enemies": [
+			["gunner", "shield", "bomber", "mortar", "mites"],
+			["charger", "sniper", "mortar", "turret", "repair", "splitter"],
+			["shield", "sniper", "mortar", "turret", "tank", "repair", "scrapper"],
+		],
+	},
+	{
+		"name": "The Loading Bay", "rooms": 12, "boss": "rust", "elite": 0.26,
+		"enemies": [
+			["gunner", "charger", "shield", "bomber", "mortar", "turret"],
+			["sniper", "mortar", "turret", "tank", "magnet", "repair", "splitter"],
+			["tank", "sniper", "magnet", "repair", "scrapper", "bomber", "shield", "turret"],
+		],
+	},
 ]
+const BOSS_ROOMS := {
+	"foreman": ["The Foreman", "Boss scrapper. Its field changes color."],
+	"magnate": ["The Magnate", "Its field takes the color you rely on most, and it drags you in."],
+	"chopper": ["The Chopper", "Two fields orbit it. Where they cross, both colors go dark."],
+	"rust": ["Boss Rust", "The gang boss. Its field hunts the color you rely on most."],
+}
+# Bots that never come as elites.
+const NO_ELITE := ["mites", "mite", "splitling", "jammer"]
+const FLYERS := ["drone", "jammer", "bomber", "magnet", "repair"]
+const SWARM_SIZE := 4
 
 const FLOOR_SPAWN_COLS := [5, 6, 7, 9, 10, 11, 12, 31, 32, 33, 35, 36, 37, 38, 39]
 
 
 # --- floor layout ---
 
-static func generate_floor(seed_value: int) -> Dictionary:
+static func generate_floor(seed_value: int, index := 0) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
+	var room_count: int = FLOORS[index].rooms
 	var start := Vector2i(1, rng.randi_range(1, GRID.y - 2))
 	var cells := {start: _new_cell(rng)}
 	var frontier: Array = [start]
-	while cells.size() < ROOM_COUNT and not frontier.is_empty():
+	while cells.size() < room_count and not frontier.is_empty():
 		var from: Vector2i = frontier[rng.randi_range(0, frontier.size() - 1)]
 		var placed := false
 		for d in _shuffled_dirs(rng):
@@ -119,7 +160,7 @@ static func generate_floor(seed_value: int) -> Dictionary:
 	if not key_rooms.is_empty():
 		cells[key_rooms[rng.randi_range(0, key_rooms.size() - 1)]].key = true
 
-	return {"cells": cells, "start": start, "boss": boss, "boss_door": boss_from}
+	return {"cells": cells, "start": start, "boss": boss, "boss_door": boss_from, "index": index}
 
 
 static func _new_cell(rng: RandomNumberGenerator) -> Dictionary:
@@ -164,11 +205,12 @@ static func build(pos: Vector2i, floor_data: Dictionary, dominant: String) -> Di
 	r.pos = pos
 	r.depth = cell.depth
 	r.kind = cell.kind
+	var index: int = floor_data.get("index", 0)
 	match cell.kind:
-		"start": _start_room(r)
+		"start": _start_room(r) if index == 0 else _lift_room(r, index)
 		"bench": _bench_room(r, cell)
-		"boss": _boss_room(r, cell)
-		_: _combat_room(r, cell, rng, dominant)
+		"boss": _boss_room(r, cell, index)
+		_: _combat_room(r, cell, rng, dominant, index)
 	if cell.kind != "boss":
 		_spine(r, cell)
 	_openings(r, cell)
@@ -192,6 +234,13 @@ static func _start_room(r: Dictionary) -> void:
 	r.salvage = true
 
 
+static func _lift_room(r: Dictionary, index: int) -> void:
+	r.name = "Freight Lift"
+	r.sub = "Floor %d of %d: %s" % [index + 1, FLOORS.size(), FLOORS[index].name]
+	_plat(r, 3, 12, 6)
+	_sign(r, 6, 16, "Another floor, another boss behind a locked door. An elite here carries the key.")
+
+
 static func _bench_room(r: Dictionary, cell: Dictionary) -> void:
 	r.name = "Workbench"
 	r.sub = "Install your salvage. Your hull gets repaired here."
@@ -201,24 +250,29 @@ static func _bench_room(r: Dictionary, cell: Dictionary) -> void:
 	_sign(r, 5, 16, "Stand at the workbench and press S. You can only change parts here.")
 
 
-static func _boss_room(r: Dictionary, cell: Dictionary) -> void:
-	r.name = "The Foreman"
-	r.sub = "Boss scrapper. Its field changes color."
+static func _boss_room(r: Dictionary, cell: Dictionary, index: int) -> void:
+	var boss: String = FLOORS[index].boss
+	r.name = BOSS_ROOMS[boss][0]
+	r.sub = BOSS_ROOMS[boss][1]
 	r.boss = true
+	# The lift to the next floor (or the way out) opens here once the boss is down.
+	r.lift = Vector2i(W / 2, H - 2)
 	_plat(r, 5, 13, 7)
 	_plat(r, 32, 13, 7)
 	_plat(r, 16, 9, 12)
-	_enemy(r, "boss", 9 if cell.doors.has("right") else 34, 16)
+	_enemy(r, "boss", 9 if cell.doors.has("right") else 34, 16, {"boss": boss})
 
 
-static func _combat_room(r: Dictionary, cell: Dictionary, rng: RandomNumberGenerator, dominant: String) -> void:
+static func _combat_room(r: Dictionary, cell: Dictionary, rng: RandomNumberGenerator, dominant: String, index: int) -> void:
 	var tier := clampi(cell.depth - 1, 0, 2)
+	# Later floors start with the nastier field layouts.
+	var field_tier := clampi(cell.depth - 1 + index, 0, 2)
 	var left: Array = SIDES[rng.randi_range(0, SIDES.size() - 1)]
 	var right: Array = SIDES[rng.randi_range(0, SIDES.size() - 1)]
 	_apply_side(r, left, false)
 	_apply_side(r, right, true)
 
-	var kinds: Array = FIELD_KINDS_BY_DEPTH[tier]
+	var kinds: Array = FIELD_KINDS_BY_DEPTH[field_tier]
 	var kind: String = kinds[rng.randi_range(0, kinds.size() - 1)]
 	var color: String = ["blue", "green", "red", "purple"][rng.randi_range(0, 3)]
 	var extra_enemy := ""
@@ -259,12 +313,19 @@ static func _combat_room(r: Dictionary, cell: Dictionary, rng: RandomNumberGener
 			r.sub = "This field hunts you, in the color you rely on most"
 			_circle(r, W / 2, 4, 100.0, dominant, {"follow": 45.0})
 
-	var pool: Array = ENEMIES_BY_DEPTH[tier]
-	var count := mini(3 + cell.depth / 2, 6)
+	var pool: Array = FLOORS[index].enemies[tier]
+	var count := mini(3 + cell.depth / 2 + index / 2, 7)
 	var used_cols := []
+	var swarmed := false
 	for i in count:
 		var kind_e: String = pool[rng.randi_range(0, pool.size() - 1)]
-		_place_enemy(r, rng, kind_e, used_cols, {})
+		# One swarm per room is plenty.
+		if kind_e == "mites":
+			if swarmed:
+				kind_e = "roller"
+			swarmed = true
+		var elite: bool = not NO_ELITE.has(kind_e) and rng.randf() < FLOORS[index].elite
+		_place_enemy(r, rng, kind_e, used_cols, {"elite": true} if elite else {})
 	if extra_enemy == "jammer":
 		_place_enemy(r, rng, "jammer", used_cols, {"color": color})
 	if cell.key:
@@ -275,7 +336,7 @@ static func _combat_room(r: Dictionary, cell: Dictionary, rng: RandomNumberGener
 
 
 static func _place_enemy(r: Dictionary, rng: RandomNumberGenerator, kind: String, used_cols: Array, opts: Dictionary) -> void:
-	if kind == "drone" or kind == "jammer":
+	if FLYERS.has(kind):
 		_enemy(r, kind, rng.randi_range(6, W - 7), rng.randi_range(4, 8), opts)
 		return
 	for attempt in 20:
@@ -285,7 +346,15 @@ static func _place_enemy(r: Dictionary, rng: RandomNumberGenerator, kind: String
 		if r.grid[H - 2][x] != "." or r.grid[H - 3][x] != "." or r.grid[H - 4][x] != ".":
 			continue
 		used_cols.append(x)
-		_enemy(r, kind, x, H - 2, opts)
+		if kind == "mites":
+			for k in SWARM_SIZE:
+				_enemy(r, "mite", x, H - 2, {"dx": (k - SWARM_SIZE / 2.0) * 14.0})
+			return
+		var o := opts.duplicate()
+		if kind == "turret":
+			# Turrets face into the room, so their backs are toward the nearest wall.
+			o["face"] = 1.0 if x < W / 2 else -1.0
+		_enemy(r, kind, x, H - 2, o)
 		return
 
 

@@ -17,6 +17,9 @@ var period := 0.0
 var cycle_t := 0.0
 var follow_speed := 0.0
 var carrier = null
+# Fields a boss drops expire; fields a boss carries can orbit it.
+var life := 0.0
+var orbit := {}
 var on := true
 var warn := false
 var next_warn := false
@@ -36,6 +39,8 @@ func setup(d: Dictionary) -> void:
 	pulse = d.get("pulse", [])
 	period = d.get("period", 0.0)
 	follow_speed = d.get("follow", 0.0)
+	life = d.get("life", 0.0)
+	orbit = d.get("orbit", {}).duplicate()
 	_rect = ColorRect.new()
 	_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_mat = ShaderMaterial.new()
@@ -70,8 +75,17 @@ func step(dt: float, target: Vector2) -> void:
 	if carrier != null:
 		if not is_instance_valid(carrier) or carrier.dead:
 			dead = true
-		else:
+		elif orbit.is_empty():
 			position = carrier.global_position
+		else:
+			orbit.angle += orbit.speed * dt
+			position = carrier.global_position + Vector2.RIGHT.rotated(orbit.angle) * orbit.radius
+	if life > 0.0:
+		life -= dt
+		# Flickers over its last second.
+		modulate.a = 1.0 if life > 1.0 else 0.45 + 0.55 * absf(sin(life * 18.0))
+		if life <= 0.0:
+			dead = true
 	if pulse.size() == 2:
 		pulse_t += dt
 		var phase := fmod(pulse_t, pulse[0] + pulse[1])
