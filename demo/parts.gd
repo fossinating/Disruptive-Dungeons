@@ -71,7 +71,32 @@ const PARTS := {
 		"shield": true,
 		"desc": "Your chosen color ignores fields, but that color's other parts always run at 70%.",
 	},
+	"pogo": {
+		"name": "Spring Heels", "colors": ["green"], "kind": "Weapon", "active": false, "cd": 0.0,
+		"desc": "Land on a bot from above to stomp it and bounce off. Falling farther hits harder.",
+	},
+	"flak": {
+		"name": "Flak Cannon", "colors": ["red"], "kind": "Weapon", "active": true, "cd": 0.9,
+		"desc": "Lob a shell that explodes on impact. Builds heat.",
+	},
+	"afterburner": {
+		"name": "Afterburner", "colors": ["blue", "red"], "kind": "Utility", "active": false, "cd": 0.0,
+		"desc": "Moving faster than your top speed leaves a trail of fire that burns bots.",
+	},
+	"decoy": {
+		"name": "Decoy", "colors": ["purple"], "kind": "Utility", "active": true, "cd": 8.0,
+		"desc": "Drop a hologram. For 4 seconds, bots aim at it instead of you.",
+	},
+	"overclock": {
+		"name": "Overclock", "colors": ["red"], "kind": "Overload", "active": false, "cd": 0.0,
+		"overload": true,
+		"desc": "Only works inside a red field. There, you build no heat and your parts recharge twice as fast.",
+	},
 }
+
+# Parts you need a schematic for before they can show up in a run. Schematics drop from
+# bosses, elites and hidden rooms, and stay unlocked for every run after.
+const LOCKED := ["hack", "cage", "coil", "siphon", "flak", "afterburner", "decoy", "overclock"]
 
 
 static func ui_color(color: String) -> Color:

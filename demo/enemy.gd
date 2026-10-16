@@ -66,6 +66,7 @@ var burst_left := 0
 var facing := 1.0
 var flash := 0.0
 var ram_cd := 0.0
+var burn_cd := 0.0
 var field_color := ""
 var field = null
 var carried = null
@@ -160,6 +161,7 @@ func label() -> String:
 func step(dt: float) -> void:
 	flash -= dt
 	ram_cd -= dt
+	burn_cd -= dt
 	timer -= dt
 	block_t -= dt
 	var p: Vector2 = game.target_pos()

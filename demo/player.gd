@@ -34,6 +34,7 @@ var air_jumps := 0
 var slamming := false
 var slam_start_y := 0.0
 var hovering := false
+var flame_t := 0.0
 var aim := Vector2.RIGHT
 
 var _sprite: Sprite2D
@@ -146,6 +147,13 @@ func _step_weapons(dt: float) -> void:
 	else:
 		coil = 0.0
 
+	# Afterburner: a fire trail while you're faster than top speed.
+	flame_t -= dt
+	if game.part_index("afterburner") >= 0 and velocity.length() > game.RAM_MIN_SPEED and flame_t <= 0.0:
+		flame_t = 0.04
+		game.add_flame(global_position, 5.0 * game.pot("afterburner"))
+		add_heat(1.5)
+
 	if game.part_index("drone") >= 0:
 		drone_angle += dt * 2.5
 		drone_cd -= dt * game.pot("drone")
@@ -174,6 +182,9 @@ func _step_timers(dt: float) -> void:
 
 
 func add_heat(amount: float) -> void:
+	# Overclock: no heat at all inside a red field.
+	if game.part_index("overclock") >= 0:
+		return
 	heat += amount
 	heat_delay = 0.35
 	if heat >= MAX_HEAT:
@@ -225,7 +236,34 @@ func activate(id: String, pot: float) -> bool:
 			return true
 		"hack":
 			return game.hack_nearest(global_position)
+		"flak":
+			if overheated:
+				return false
+			game.shell(global_position, aim * 520.0 + Vector2(0, -60), 18.0 * pot, true, Color("ffb050"), "Flak Cannon", 420.0, 60.0)
+			velocity -= aim * 90.0
+			add_heat(26.0)
+			game.sfx.play("shotgun", -6.0, 0.7)
+			return true
+		"decoy":
+			game.drop_decoy(global_position, 4.0)
+			game.sfx.play("hack", -4.0, 1.4)
+			return true
 	return false
+
+
+## Spring Heels: a stomp when you land on a bot from above. Returns true if it happened.
+func try_stomp(e) -> bool:
+	if game.part_index("pogo") < 0 or velocity.y < 120.0 or global_position.y > e.global_position.y - e.half.y + 4.0:
+		return false
+	var dmg: float = (10.0 + velocity.y * 0.02) * game.pot("pogo")
+	e.take_damage(dmg, "Spring Heels", Vector2(0, 120))
+	velocity.y = JUMP_VELOCITY * (1.05 if Input.is_action_pressed("dd_jump") else 0.8)
+	slamming = false
+	air_jumps = 1 if game.part_index("djump") >= 0 else 0
+	invuln = maxf(invuln, 0.2)
+	game.burst(global_position + Vector2(0, RADIUS), Parts.ui_color("green"), 10, 140.0)
+	game.sfx.play("jump", -2.0, 1.5)
+	return true
 
 
 func _land_slam() -> void:

@@ -14,6 +14,7 @@ const UiDrawer := preload("res://demo/ui_drawer.gd")
 const RoomView := preload("res://demo/room_view.gd")
 const Sfx := preload("res://demo/sfx.gd")
 const BenchUI := preload("res://demo/bench_ui.gd")
+const Unlocks := preload("res://demo/unlocks.gd")
 
 const T := 32
 const GRAVITY := 980.0
@@ -28,6 +29,7 @@ const SPEED_ZOOM_OUT := 0.35
 # Extra camera room below the floor so the slot cards don't cover the player.
 const HUD_MARGIN := 80
 const RAM_MIN_SPEED := 360.0
+const ELITE_SCHEMATIC_CHANCE := 0.25
 
 enum Mode { TITLE, PLAY, BENCH, PAUSE, DEAD, WIN }
 
@@ -44,6 +46,8 @@ var particles: Array = []
 var floaters: Array = []
 var bolts: Array = []
 var pickups: Array = []
+var flames: Array = []
+var decoy := {}
 var toasts: Array = []
 var banner := {}
 var raw_colors: Dictionary = {}
@@ -117,6 +121,9 @@ func _ready() -> void:
 	_bench.visible = false
 	layer.add_child(_bench)
 
+	var args := OS.get_cmdline_user_args()
+	if args.has("--smoke") or args.has("--traverse") or args.has("--bestiary"):
+		Unlocks.reset()
 	new_run()
 	_smoke = OS.get_cmdline_user_args().has("--smoke")
 	if OS.get_cmdline_user_args().has("--traverse"):
@@ -239,6 +246,8 @@ func load_room(pos: Vector2i, entry := "", from_pos := Vector2.ZERO) -> void:
 	gens.clear()
 	bullets.clear()
 	pickups.clear()
+	flames.clear()
+	decoy = {}
 	bolts.clear()
 	particles.clear()
 	floaters.clear()
@@ -505,14 +514,16 @@ func give_random_parts(n: int) -> Array:
 			owned[s.id] = true
 	for id in run.stash:
 		owned[id] = true
+	# Only parts you've found the schematic for (or that never needed one).
+	var pool: Array = Unlocks.pool()
 	var fresh := []
-	for id in Parts.PARTS:
+	for id in pool:
 		if not owned.has(id):
 			fresh.append(id)
 	fresh.shuffle()
 	var out := []
 	for k in n:
-		var id: String = fresh.pop_back() if not fresh.is_empty() else Parts.PARTS.keys().pick_random()
+		var id: String = fresh.pop_back() if not fresh.is_empty() else pool.pick_random()
 		run.stash.append(id)
 		out.append(id)
 	return out
@@ -530,10 +541,12 @@ func _physics_process(dt: float) -> void:
 	if mode != Mode.PLAY:
 		return
 	_update_status()
+	# Overclock: parts recharge twice as fast inside a red field.
+	var recharge := 2.0 if part_index("overclock") >= 0 else 1.0
 	for i in run.slots.size():
 		var s = run.slots[i]
 		if s != null:
-			s.cd = maxf(0.0, s.cd - dt)
+			s.cd = maxf(0.0, s.cd - dt * recharge)
 		if Input.is_action_just_pressed("dd_slot%d" % i):
 			_try_activate(i)
 
@@ -549,6 +562,7 @@ func _physics_process(dt: float) -> void:
 			_check_contact(e)
 
 	_step_bullets(dt)
+	_step_flames(dt)
 	_step_pickups(dt)
 	_step_effects(dt)
 
@@ -598,7 +612,12 @@ func _smoke_step() -> void:
 			open_bench()
 		_save_shot.call_deferred(shots.path_join("room_%d_%d.png" % [room_pos.x, room_pos.y]))
 	if _smoke_frames % 90 == 0:
-		# Exercise each active part once per room, then move on.
+		# Install the next four parts and fire each one, so every part gets used across the run.
+		var ids: Array = Parts.PARTS.keys()
+		for i in 4:
+			var id: String = ids[(_smoke_frames / 90 * 4 + i) % ids.size()]
+			run.slots[i] = {"id": id, "cd": 0.0, "color": "red"}
+		_update_status()
 		for i in 4:
 			_try_activate(i)
 		print("smoke: %s ok (%s, depth %d), %d bots, %d fields" % [room_pos, room.name, room.depth, enemies.size(), fields.size()])
@@ -732,6 +751,10 @@ func _bestiary_test() -> void:
 			_kill_all()
 			await get_tree().physics_frame
 			var ok: bool = alive and count_kind(kind) == 0
+			# Bosses always drop a schematic while any are still locked.
+			if kind == "boss" and not pickups.any(func(p): return p.has("schematic")):
+				print("bestiary: %s dropped no schematic" % name)
+				ok = false
 			print("bestiary: %s%s %s" % ["elite " if elite else "", name, "ok" if ok else "FAILED"])
 			if not ok:
 				fails += 1
@@ -754,8 +777,55 @@ func _bestiary_test() -> void:
 	print("bestiary: repair bot rebuilds a generator %s" % ("ok" if rebuilt and remembered else "FAILED"))
 	if not (rebuilt and remembered):
 		fails += 1
+	fails += await _part_checks()
 	print("bestiary: %d failures" % fails)
 	get_tree().quit()
+
+
+## Checks that the newer parts land hits: stomp, flak, afterburner and decoy.
+func _part_checks() -> int:
+	var fails := 0
+	var floor_y := (Rooms.H - 1) * T - 16.0
+	for id in ["pogo", "flak", "afterburner", "decoy"]:
+		load_room(run.floor.start)
+		_kill_all()
+		await get_tree().physics_frame
+		win_timer = -1.0
+		run.slots = [{"id": id, "cd": 0.0, "color": "red"}, null, null, null]
+		var target = spawn_enemy("tank", _enemy_pos("tank", 30, Rooms.H - 2), {})
+		target.speed_mult = 0.0
+		door_open = false
+		_set_openings("D")
+		_build_collision()
+		var ok := false
+		match id:
+			"pogo":
+				player.global_position = target.global_position + Vector2(0, -target.half.y - 60)
+				player.velocity = Vector2(0, 300)
+			"flak":
+				player.global_position = Vector2(24 * T, floor_y)
+				player.aim = Vector2.RIGHT
+				_update_status()
+				player.activate("flak", 1.0)
+			"afterburner":
+				player.global_position = Vector2(26 * T, floor_y)
+			"decoy":
+				player.global_position = Vector2(12 * T, floor_y)
+				_update_status()
+				_try_activate(0)
+				player.global_position.x += 200.0
+				ok = not decoy.is_empty() and target_pos() == decoy.pos
+		for f in 90:
+			if id == "afterburner":
+				# Run back and forth through the tank.
+				player.velocity.x = 600.0 * (1.0 if f % 40 < 20 else -1.0)
+			await get_tree().physics_frame
+		if id != "decoy":
+			ok = target.hp < target.max_hp
+		print("parts: %s %s" % [Parts.PARTS[id].name, "ok" if ok else "FAILED"])
+		if not ok:
+			fails += 1
+	return fails
 
 
 func _save_shot(path: String) -> void:
@@ -897,6 +967,8 @@ func _check_contact(e) -> void:
 	var away: Vector2 = (pp - e.global_position).normalized()
 	var speed: float = player.velocity.length()
 	# Ram only counts above normal top speed: Boost, Heat Vent, recoil or a long fall.
+	if player.try_stomp(e):
+		return
 	if part_index("ram") >= 0 and speed > RAM_MIN_SPEED:
 		if e.ram_cd <= 0.0:
 			e.ram_cd = 0.35
@@ -994,9 +1066,46 @@ func explode(at: Vector2, radius: float, dmg: float, friendly: bool, source: Str
 		player.hurt(dmg, (player.global_position - at).normalized() * 220.0 + Vector2(0, -120))
 
 
-## Where the bots aim. The player, unless something distracts them.
+## Where the bots aim: the player, or a Decoy while one is up.
 func target_pos() -> Vector2:
+	if not decoy.is_empty():
+		return decoy.pos
 	return player.global_position
+
+
+func drop_decoy(at: Vector2, duration: float) -> void:
+	decoy = {"pos": at, "t": duration}
+	burst(at, Parts.ui_color("purple"), 14, 140.0)
+
+
+func add_flame(at: Vector2, dmg: float) -> void:
+	if flames.size() < 80:
+		flames.append({"pos": at, "life": 0.7, "dmg": dmg})
+
+
+## Afterburner fire: burns each bot it touches every few tenths of a second.
+func _step_flames(dt: float) -> void:
+	if not decoy.is_empty():
+		decoy.t -= dt
+		if decoy.t <= 0.0:
+			burst(decoy.pos, Parts.ui_color("purple"), 10, 100.0)
+			decoy = {}
+	for f in flames:
+		f.life -= dt
+		if randf() < 0.3:
+			particle(f.pos + Vector2(randf_range(-6, 6), 0), Vector2(randf_range(-20, 20), -80), Color("ff8a3d").lerp(Color("ffd060"), randf()), 0.3, 3.0)
+	flames = flames.filter(func(f): return f.life > 0.0)
+	if flames.is_empty():
+		return
+	for e in enemies.duplicate():
+		if e.dead or e.burn_cd > 0.0:
+			continue
+		var r: Rect2 = e.hit_rect().grow(10.0)
+		for f in flames:
+			if r.has_point(f.pos):
+				e.burn_cd = 0.3
+				e.take_damage(f.dmg, "Afterburner")
+				break
 
 
 ## The first wall point between a and b, or b.
@@ -1144,6 +1253,8 @@ func on_enemy_killed(e) -> void:
 	if e.drops_key:
 		pickups.append({"pos": e.global_position, "vel": Vector2(0, -300), "t": 0.0, "key": true})
 		toast("The elite dropped the boss key.")
+	if e.kind == "boss" or (e.elite and randf() < ELITE_SCHEMATIC_CHANCE):
+		drop_schematic(e.global_position)
 	if e.carried != null:
 		pickups.append({"pos": e.global_position, "vel": Vector2(0, -260), "t": 0.0, "slot": e.carried, "slot_index": e.carried_slot})
 	if e.kind == "splitter":
@@ -1167,6 +1278,17 @@ func on_enemy_killed(e) -> void:
 			run.lift_open = true
 			announce("%s is scrap" % e.label(), "The freight lift is running. Stand on it and press S")
 	e.queue_free()
+
+
+## Drops a schematic for a part you haven't unlocked yet, if there are any left.
+func drop_schematic(at: Vector2) -> bool:
+	var left: Array = Unlocks.still_locked()
+	for p in pickups:
+		left.erase(p.get("schematic", ""))
+	if left.is_empty():
+		return false
+	pickups.append({"pos": at, "vel": Vector2(randf_range(-60, 60), -320), "t": 0.0, "schematic": left.pick_random()})
+	return true
 
 
 func _hit_gen(g: Dictionary, dmg: float) -> void:
@@ -1278,6 +1400,14 @@ func _collect(p: Dictionary) -> void:
 	if p.get("key", false):
 		run.has_key = true
 		toast("You have the boss key. The locked door is gold on the map.")
+		return
+	if p.has("schematic"):
+		var id: String = p.schematic
+		Unlocks.unlock(id)
+		run.stash.append(id)
+		run.stats.schematics = run.stats.get("schematics", 0) + 1
+		sfx.play("door", -2.0, 1.6)
+		announce("Schematic: %s" % Parts.PARTS[id].name, "It can show up in every run from now on. This one goes in your stash.")
 		return
 	if p.get("crate", false):
 		var got := give_random_parts(1)
@@ -1401,6 +1531,13 @@ func _draw_fx(c: Node2D) -> void:
 			c.draw_circle(p.pos + Vector2(-4, 0), 5.0, ACCENT)
 			c.draw_rect(Rect2(p.pos + Vector2(0, -1.5), Vector2(10, 3)), ACCENT)
 			c.draw_rect(Rect2(p.pos + Vector2(6, 0), Vector2(2, 5)), ACCENT)
+		elif p.has("schematic"):
+			var bob := sin(Time.get_ticks_msec() / 250.0) * 3.0
+			var r := Rect2(p.pos - Vector2(10, 7 - bob), Vector2(20, 14))
+			c.draw_rect(r, Color("3a6ab0"))
+			for k in 3:
+				c.draw_line(r.position + Vector2(3, 4 + k * 3), r.position + Vector2(17, 4 + k * 3), Color(0.85, 0.92, 1.0), 1.0)
+			c.draw_rect(r, Parts.part_color(p.schematic), false, 2.0)
 		elif p.get("crate", false):
 			c.draw_rect(Rect2(p.pos - Vector2(8, 8), Vector2(16, 16)), Color("a07850"))
 			c.draw_rect(Rect2(p.pos - Vector2(8, 8), Vector2(16, 16)), ACCENT, false, 1.5)
@@ -1422,6 +1559,12 @@ func _draw_fx(c: Node2D) -> void:
 			continue
 		var tail: Vector2 = b.vel.normalized() * (6.0 if b.friendly else 4.0)
 		c.draw_line(b.pos - tail, b.pos + tail * 0.3, b.color, 3.0 if b.friendly else 4.0)
+	for f in flames:
+		c.draw_circle(f.pos, 5.0 * f.life / 0.7 + 2.0, Color(1.0, 0.55, 0.2, 0.7))
+	if not decoy.is_empty():
+		var flick := 0.35 + 0.25 * sin(Time.get_ticks_msec() / 50.0)
+		c.draw_circle(decoy.pos, PlayerScript.RADIUS, Color(Parts.ui_color("purple"), flick))
+		c.draw_arc(decoy.pos, PlayerScript.RADIUS + 4.0, 0, TAU, 20, Color(Parts.ui_color("purple"), 0.8), 1.5)
 	for p in particles:
 		var a: float = p.life / p.max
 		c.draw_rect(Rect2(p.pos - Vector2.ONE * p.size / 2.0, Vector2.ONE * p.size), Color(p.color, a))
@@ -1771,6 +1914,7 @@ func _show_title() -> void:
 		["Vertical-slice demo of the rework proposal", 22, MUTED],
 		"You are SP-1N, caught by a scrapper gang. Fight up through four generated floors of the scrapshop. On each one, take the boss key from an elite and beat the boss behind the locked door. Every part you install has a color, and a disruption field shuts off every part of its color.",
 		["The question this slice tests: is it fun to lose one color of your build to a field and fight with the rest?", 18, ACCENT],
+		["Schematics found: %d of %d. Bosses, elites and hidden rooms drop them, and each one adds a part that can show up in every run after." % [Unlocks.found_count(), Parts.LOCKED.size()], 17, TEXT],
 		["A / D roll   ·   W or Space jump   ·   S + Space drop through platforms\nLeft click: basic shot   ·   Q E R F: use the part in that slot\nS at a workbench: change parts   ·   Esc: pause and debug options", 17, MUTED],
 	], [["Start the escape", _start]])
 
@@ -1791,6 +1935,7 @@ func _show_pause() -> void:
 		["Go to boss door", _debug_boss_door],
 		["Skip to next floor", _debug_next_floor],
 		["God mode: %s" % ("on" if god_mode else "off"), _toggle_god],
+		["Forget schematics", _debug_forget],
 		["Sound: %s" % ("off" if sfx.muted else "on"), _toggle_sound],
 		["Quit", _quit],
 	])
@@ -1801,6 +1946,12 @@ func _debug_all_parts() -> void:
 		if not run.stash.has(id):
 			run.stash.append(id)
 	toast("Every part is in your stash. Visit a workbench to install them.")
+	_resume()
+
+
+func _debug_forget() -> void:
+	Unlocks.reset()
+	toast("Schematics forgotten. Only the starting parts drop now.")
 	_resume()
 
 
@@ -1869,5 +2020,6 @@ func _show_end(won: bool) -> void:
 	for k in keys.slice(0, 6):
 		dmg.append("%s %d" % [k, roundi(st.damage[k])])
 	lines.append(["Damage by source:   " + ("   ".join(dmg) if not dmg.is_empty() else "none"), 17, TEXT])
+	lines.append(["Schematics found this run: %d   ·   Unlocked so far: %d of %d" % [st.get("schematics", 0), Unlocks.found_count(), Parts.LOCKED.size()], 17, MUTED])
 	lines.append(["Things to notice: did losing a color feel like a puzzle or a punishment? Did synergy pull you toward one color? Did you hear a color power down before you saw it?", 17, ACCENT])
 	_screen("Escaped!" if won else "Scrapped", lines, [["Try again", _restart], ["Quit", _quit]])
