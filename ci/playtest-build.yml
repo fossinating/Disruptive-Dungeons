@@ -1,0 +1,134 @@
+# Playtest build: export the game for Windows, Linux and Web on every PR push, on
+# main, and on a release (docs/playtest-builds.md in fossinating/jarvis).
+#
+# This job runs the branch's code: a Godot export runs @tool scripts and export
+# plugins. So it has no secrets and a read-only token, and it only leaves an
+# artifact. Playtest deploy (a workflow_run from main) uploads it.
+#
+# Needs in the repo: .godot-version (e.g. 4.3 or 3.5.3, optionally -rc1 etc.)
+# and export presets named exactly Windows, Linux and Web.
+name: Playtest build
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore: ['**/*.md', 'docs/**', 'ci/**', 'LICENSE', '.github/**']
+  push:
+    branches: [main]
+    paths-ignore: ['**/*.md', 'docs/**', 'ci/**', 'LICENSE', '.github/**']
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+# A new push to a PR cancels the build still running for its last one.
+concurrency:
+  group: playtest-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          lfs: true
+
+      - name: Read the Godot version
+        id: godot
+        run: |
+          v=$(tr -d ' \r\n' < .godot-version)
+          if ! [[ "$v" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-z0-9]+)?$ ]]; then
+            echo "::error file=.godot-version::expected a Godot version like 4.3 or 3.5.3-stable, got '$v'"
+            exit 1
+          fi
+          [[ "$v" == *-* ]] || v="$v-stable"
+          major=${v%%.*}
+          if [ "$major" = 3 ]; then
+            bin="Godot_v${v}_linux_headless.64"
+            templates="$HOME/.local/share/godot/templates/${v/-/.}"
+            imported=.import
+          else
+            bin="Godot_v${v}_linux.x86_64"
+            templates="$HOME/.local/share/godot/export_templates/${v/-/.}"
+            imported=.godot
+          fi
+          {
+            echo "version=$v"
+            echo "major=$major"
+            echo "bin=$bin"
+            echo "templates=$templates"
+            echo "imported=$imported"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Cache Godot and its export templates
+        id: godot-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/godot
+            ${{ steps.godot.outputs.templates }}
+          key: godot-${{ steps.godot.outputs.version }}
+
+      - name: Install Godot
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        env:
+          V: ${{ steps.godot.outputs.version }}
+          BIN: ${{ steps.godot.outputs.bin }}
+          TEMPLATES: ${{ steps.godot.outputs.templates }}
+        run: |
+          # godot-builds holds every release, 3.x included.
+          base="https://github.com/godotengine/godot-builds/releases/download/$V"
+          mkdir -p ~/godot "$TEMPLATES" /tmp/godot
+          curl -fsSL -o /tmp/godot/bin.zip "$base/$BIN.zip"
+          curl -fsSL -o /tmp/godot/templates.tpz "$base/Godot_v${V}_export_templates.tpz"
+          unzip -q /tmp/godot/bin.zip -d ~/godot
+          unzip -q /tmp/godot/templates.tpz -d /tmp/godot
+          mv /tmp/godot/templates/* "$TEMPLATES/"
+          rm -rf /tmp/godot
+
+      - name: Cache the import
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ steps.godot.outputs.imported }}
+          key: import-${{ steps.godot.outputs.version }}-${{ hashFiles('**/*.import', 'project.godot') }}
+          restore-keys: import-${{ steps.godot.outputs.version }}-
+
+      - name: Export Windows, Linux and Web
+        env:
+          BIN: ${{ steps.godot.outputs.bin }}
+          MAJOR: ${{ steps.godot.outputs.major }}
+          VERSION: ${{ steps.godot.outputs.version }}
+        run: |
+          godot="$HOME/godot/$BIN"
+          chmod +x "$godot"
+          name=$(basename "$GITHUB_REPOSITORY")
+          mkdir -p out/web out/windows out/linux
+          if [ "$MAJOR" = 3 ]; then
+            # Import first: a fresh checkout's first export can miss resources otherwise.
+            timeout 900 "$godot" --editor --quit || true
+            export_() { "$godot" --export "$1" "$2"; }
+          else
+            timeout 900 "$godot" --headless --editor --quit || true
+            export_() { "$godot" --headless --export-release "$1" "$2"; }
+          fi
+          export_ Windows "out/windows/$name.exe"
+          export_ Linux "out/linux/$name.x86_64"
+          export_ Web "out/web/index.html"
+          test -f "out/windows/$name.exe" && test -f "out/linux/$name.x86_64" && test -f out/web/index.html
+          (cd out/windows && zip -qr ../windows.zip .)
+          (cd out/linux && chmod +x "$name.x86_64" && zip -qr ../linux.zip .)
+          rm -rf out/windows out/linux
+          echo "$VERSION" > out/godot.txt
+          du -sh out/*
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: playtest
+          path: out/
+          retention-days: 1
+          if-no-files-found: error

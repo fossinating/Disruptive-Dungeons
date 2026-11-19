@@ -1,0 +1,41 @@
+# Playtest cleanup: when a PR is merged or closed, delete its build from
+# play.<domain> and mark its deployments inactive, so Jarvis stops linking to it
+# (docs/playtest-builds.md in fossinating/jarvis). It never checks out the code.
+#
+# Needs the same R2 secrets and variables as Playtest deploy.
+name: Playtest cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  deployments: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      BUCKET: ${{ vars.R2_BUCKET || 'playtest-builds' }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      AWS_DEFAULT_REGION: auto
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+    steps:
+      - name: Delete the build
+        run: |
+          game=$(basename "$REPO")
+          aws s3 rm "s3://$BUCKET/$game/pr-$PR/" --recursive --only-show-errors \
+            --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+
+      - name: Mark its deployments inactive
+        run: |
+          for id in $(gh api "repos/$REPO/deployments?environment=pr-$PR&per_page=100" --jq '.[].id'); do
+            gh api "repos/$REPO/deployments/$id/statuses" -f state=inactive > /dev/null
+          done
