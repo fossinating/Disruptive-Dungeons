@@ -1,0 +1,197 @@
+# Playtest deploy: put a finished Playtest build online (docs/playtest-builds.md in
+# fossinating/jarvis).
+#
+# workflow_run always runs this file as it is on main, never a branch's copy, and
+# nothing here checks out or runs the game's code: it only moves the build
+# artifact. That's why it may hold the R2 keys and write deployments.
+#
+#   a PR's build    -> <game>/pr-<N>/ on play.<domain>, and a GitHub deployment
+#                      pr-<N> on the PR's head, which Jarvis shows as its preview
+#   main's build    -> <game>/latest/
+#   a release build -> zips attached to the GitHub release
+#
+# Needs in the repo: secrets R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY;
+# variables PLAYTEST_URL (https://play.<domain>) and, if not the default,
+# R2_BUCKET (playtest-builds).
+name: Playtest deploy
+
+on:
+  workflow_run:
+    workflows: [Playtest build]
+    types: [completed]
+
+permissions: {}
+
+# One deploy at a time per PR (or main, or tag), in the order the builds finished.
+concurrency:
+  group: playtest-deploy-${{ github.event.workflow_run.event }}-${{ github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+env:
+  REPO: ${{ github.repository }}
+  SHA: ${{ github.event.workflow_run.head_sha }}
+  RUN_ID: ${{ github.event.workflow_run.id }}
+  RUN_URL: ${{ github.event.workflow_run.html_url }}
+
+jobs:
+  preview:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      (github.event.workflow_run.event == 'pull_request' || github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      actions: write # read the build run's artifact, then delete it
+      deployments: write
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EVENT: ${{ github.event.workflow_run.event }}
+      BRANCH: ${{ github.event.workflow_run.head_branch }}
+      PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+      PLAYTEST_URL: ${{ vars.PLAYTEST_URL }}
+      BUCKET: ${{ vars.R2_BUCKET || 'playtest-builds' }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      AWS_DEFAULT_REGION: auto
+      # R2 doesn't take every checksum newer AWS CLIs send by default.
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+    steps:
+      - name: Which build
+        id: target
+        run: |
+          if [ "$EVENT" = push ]; then
+            # Only main's builds are hosted; a push build elsewhere isn't a preview.
+            [ "$BRANCH" = main ] || { echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; }
+            echo "build=latest" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "$PR" ]; then
+            PR=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '[.[] | select(.state == "open")][0].number // empty')
+          fi
+          [[ "$PR" =~ ^[0-9]+$ ]] || { echo "::error::no open PR for $SHA"; exit 1; }
+          head=$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)
+          if [ "$head" != "$SHA" ]; then
+            # A newer push is on its way; its own build will deploy.
+            echo "PR #$PR has moved on to $head; skipping $SHA" >> "$GITHUB_STEP_SUMMARY"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          title=$(gh api "repos/$REPO/pulls/$PR" --jq .title)
+          {
+            echo "build=pr-$PR"
+            echo "pr=$PR"
+            echo "title<<__TITLE__"
+            printf '%s\n' "$title" | head -c 300
+            echo
+            echo "__TITLE__"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Start the deployment
+        id: deployment
+        if: steps.target.outputs.pr
+        env:
+          ENVIRONMENT: ${{ steps.target.outputs.build }}
+        run: |
+          id=$(jq -n --arg ref "$SHA" --arg env "$ENVIRONMENT" \
+            '{ref: $ref, environment: $env, auto_merge: false, required_contexts: [],
+              transient_environment: true, production_environment: false,
+              description: "Playtest build"}' \
+            | gh api "repos/$REPO/deployments" --input - --jq .id)
+          gh api "repos/$REPO/deployments/$id/statuses" -f state=in_progress -f log_url="$RUN_URL" > /dev/null
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: steps.target.outputs.skip != 'true'
+        with:
+          name: playtest
+          path: out
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Check the build
+        if: steps.target.outputs.skip != 'true'
+        run: |
+          # The artifact was made by the branch's code: take only what a build has.
+          cd out
+          if find . -type l | grep -q .; then echo "::error::the build has symlinks"; exit 1; fi
+          extra=$(find . -type f ! -path './web/*' ! -name windows.zip ! -name linux.zip ! -name godot.txt)
+          [ -z "$extra" ] || { echo "::error::unexpected files in the build: $extra"; exit 1; }
+          test -f web/index.html || { echo "::error::no web/index.html"; exit 1; }
+          bytes=$(du -sb . | cut -f1)
+          [ "$bytes" -lt 2000000000 ] || { echo "::error::the build is over 2 GB"; exit 1; }
+          if find web -type f | grep -vqE '^web/[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$'; then
+            echo "::error::web/ has file names the Worker won't serve"; exit 1
+          fi
+
+      - name: Upload to R2
+        if: steps.target.outputs.skip != 'true'
+        env:
+          BUILD: ${{ steps.target.outputs.build }}
+          PR_NUMBER: ${{ steps.target.outputs.pr }}
+          TITLE: ${{ steps.target.outputs.title }}
+        run: |
+          game=$(basename "$REPO")
+          godot=$(head -c 40 out/godot.txt | tr -cd 'A-Za-z0-9.-')
+          rm -f out/godot.txt
+          jq -n --arg repo "$REPO" --arg sha "$SHA" --arg pr "$PR_NUMBER" --arg title "$TITLE" \
+            --arg run_url "$RUN_URL" --arg godot "$godot" --arg built_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{repo: $repo, sha: $sha, pr: (if $pr == "" then null else ($pr | tonumber) end),
+              title: (if $title == "" then null else $title end), run_url: $run_url, godot: $godot, built_at: $built_at}' \
+            > out/build.json
+          # --delete clears what the last push left (an export that was dropped, renamed files).
+          aws s3 sync out/ "s3://$BUCKET/$game/$BUILD/" --delete --only-show-errors \
+            --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+          echo "url=${PLAYTEST_URL%/}/$game/$BUILD/" >> "$GITHUB_ENV"
+
+      - name: Delete the artifact
+        if: steps.target.outputs.skip != 'true'
+        # Private repos get 500 MB of artifact storage; the build is in R2 now.
+        run: |
+          for id in $(gh api "repos/$REPO/actions/runs/$RUN_ID/artifacts" --jq '.artifacts[] | select(.name == "playtest") | .id'); do
+            gh api -X DELETE "repos/$REPO/actions/artifacts/$id"
+          done
+
+      - name: Finish the deployment
+        if: always() && steps.deployment.outputs.id
+        env:
+          ID: ${{ steps.deployment.outputs.id }}
+          OK: ${{ job.status == 'success' }}
+        run: |
+          if [ "$OK" = true ] && [ -n "${url:-}" ]; then
+            gh api "repos/$REPO/deployments/$ID/statuses" -f state=success \
+              -f environment_url="$url" -f log_url="$RUN_URL" > /dev/null
+            echo "Playtest build: $url" >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh api "repos/$REPO/deployments/$ID/statuses" -f state=failure -f log_url="$RUN_URL" > /dev/null
+          fi
+
+  release:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'release'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      actions: read # the build run's artifact
+      contents: write # attach the zips to the release
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.event.workflow_run.head_branch }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: playtest
+          path: out
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Attach the builds to the release
+        run: |
+          [[ "$TAG" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "::error::odd tag '$TAG'"; exit 1; }
+          game=$(basename "$REPO")
+          mkdir assets
+          mv out/windows.zip "assets/$game-$TAG-windows.zip"
+          mv out/linux.zip "assets/$game-$TAG-linux.zip"
+          (cd out/web && zip -qr "../../assets/$game-$TAG-web.zip" .)
+          gh release upload "$TAG" assets/* --clobber --repo "$REPO"
